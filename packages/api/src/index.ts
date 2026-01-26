@@ -95,8 +95,11 @@ export const startServer = (config: ServerConfig) => {
     console.log(`API server running on http://localhost:${info.port}`);
   });
 
-  // Set up WebSocket server
-  const wss = createChatServer({ db });
+  // Set up WebSocket server with AI support
+  const wss = createChatServer({
+    db,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  });
 
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '', 'http://localhost');
