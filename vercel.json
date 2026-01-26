@@ -1,13 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "outputDirectory": "packages/web/dist",
-  "framework": "vite",
-  "installCommand": "npm install",
-  "functions": {
-    "api/**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 30
-    }
-  }
+  "buildCommand": "npm run build -w @bangui/app",
+  "outputDirectory": "packages/app/.next",
+  "framework": "nextjs",
+  "installCommand": "npm install"
 }
