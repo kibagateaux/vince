@@ -1,12 +1,15 @@
 /**
  * @module @bangui/web/App
- * Root application component with Privy provider
+ * Root application component with Privy provider and routing
  */
 
 import { FC } from 'react';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chat } from './components/Chat.js';
+import { ConversationsDashboard } from './components/admin/ConversationsDashboard.js';
+import { ConversationDetailView } from './components/admin/ConversationDetailView.js';
 
 const queryClient = new QueryClient();
 
@@ -22,23 +25,29 @@ if (!PRIVY_APP_ID) {
  */
 export const App: FC = () => {
   return (
-    <PrivyProvider
-      appId={PRIVY_APP_ID}
-      config={{
-        loginMethods: ['wallet'],
-        appearance: {
-          theme: 'light',
-          accentColor: '#2563eb',
-          logo: undefined,
-        },
-        embeddedWallets: {
-          createOnLogin: 'users-without-wallets',
-        },
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <Chat />
-      </QueryClientProvider>
-    </PrivyProvider>
+    <BrowserRouter>
+      <PrivyProvider
+        appId={PRIVY_APP_ID}
+        config={{
+          loginMethods: ['wallet'],
+          appearance: {
+            theme: 'light',
+            accentColor: '#2563eb',
+            logo: undefined,
+          },
+          embeddedWallets: {
+            createOnLogin: 'users-without-wallets',
+          },
+        }}
+      >
+        <QueryClientProvider client={queryClient}>
+          <Routes>
+            <Route path="/" element={<Chat />} />
+            <Route path="/admin" element={<ConversationsDashboard />} />
+            <Route path="/admin/conversations/:id" element={<ConversationDetailView />} />
+          </Routes>
+        </QueryClientProvider>
+      </PrivyProvider>
+    </BrowserRouter>
   );
 };
