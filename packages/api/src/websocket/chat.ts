@@ -44,8 +44,10 @@ interface ClientState {
 /** Chat server configuration */
 export interface ChatServerConfig {
   db: Db;
-  /** Anthropic API key for dynamic AI responses */
-  anthropicApiKey?: string;
+  /** OpenRouter API key for dynamic AI responses */
+  openRouterApiKey?: string;
+  /** Optional model override (e.g., anthropic/claude-sonnet-4) */
+  openRouterModel?: string;
 }
 
 /**
@@ -54,13 +56,13 @@ export interface ChatServerConfig {
  * @returns WebSocket server instance
  */
 export const createChatServer = (config: ChatServerConfig): WebSocketServer => {
-  const { db, anthropicApiKey } = config;
+  const { db, openRouterApiKey, openRouterModel } = config;
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Map<string, ClientState>();
 
   // Create AI runtime if API key is available
-  const vinceRuntime = anthropicApiKey
-    ? createVinceRuntime({ apiKey: anthropicApiKey })
+  const vinceRuntime = openRouterApiKey
+    ? createVinceRuntime({ apiKey: openRouterApiKey, model: openRouterModel })
     : null;
 
   wss.on('connection', async (ws, req) => {
@@ -220,6 +222,37 @@ What would you like to explore?`;
 };
 
 /**
+ * Parses deposit info from AI-generated response
+ * Looks for patterns like "$500 USDC", "500 USDC", etc. in the AI's response
+ */
+const parseDepositFromAIResponse = (
+  content: string
+): { amount: string; token: string } | null => {
+  const knownTokens = ['USDC', 'ETH', 'USDT', 'DAI', 'WETH'];
+  const tokenPattern = knownTokens.join('|');
+
+  // Patterns to find deposit amounts in AI responses
+  const patterns = [
+    // "$500 USDC", "$100 ETH"
+    new RegExp(`\\$(\\d+(?:,\\d{3})*(?:\\.\\d+)?)\\s*(${tokenPattern})`, 'i'),
+    // "500 USDC", "100 ETH"
+    new RegExp(`(\\d+(?:,\\d{3})*(?:\\.\\d+)?)\\s*(${tokenPattern})`, 'i'),
+  ];
+
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match && match[1] && match[2]) {
+      const amount = match[1].replace(/,/g, ''); // Remove commas from numbers
+      const token = match[2].toUpperCase();
+      if (knownTokens.includes(token)) {
+        return { amount, token };
+      }
+    }
+  }
+  return null;
+};
+
+/**
  * Generates an AI response using VinceRuntime, with appropriate fallbacks
  * @param state - The conversation state: 'investing' for general queries, 'persuading' for hesitant users
  */
@@ -267,8 +300,35 @@ const generateAIResponse = async (
     responseContent = getFallbackResponse(state);
   }
 
-  await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
-  sendResponse(ws, conversationId, responseContent);
+  // Check if AI response mentions a specific deposit amount - if so, attach the action button
+  // In investment context, any mention of a specific amount with token should show the deposit button
+  const depositInfo = parseDepositFromAIResponse(responseContent);
+
+  console.log('[DEBUG] Deposit detection:', {
+    depositInfo,
+    state,
+    responsePreview: responseContent.substring(0, 150)
+  });
+
+  if (depositInfo) {
+    console.log('[DEBUG] Attaching deposit action for', depositInfo.amount, depositInfo.token);
+    const depositActions: ActionPrompt[] = [
+      {
+        type: 'deposit',
+        data: {
+          action: 'sign',
+          amount: depositInfo.amount,
+          token: depositInfo.token,
+          chain: 'ethereum',
+        }
+      },
+    ];
+    await createMessage(db, { conversationId, sender: 'vince', content: responseContent, metadata: { actions: depositActions } });
+    sendResponse(ws, conversationId, responseContent, depositActions);
+  } else {
+    await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
+    sendResponse(ws, conversationId, responseContent);
+  }
 };
 
 /**

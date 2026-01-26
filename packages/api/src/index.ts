@@ -98,7 +98,8 @@ export const startServer = (config: ServerConfig) => {
   // Set up WebSocket server with AI support
   const wss = createChatServer({
     db,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    openRouterApiKey: process.env.OPENROUTER_API_KEY,
+    openRouterModel: process.env.OPENROUTER_MODEL,
   });
 
   server.on('upgrade', (request, socket, head) => {
