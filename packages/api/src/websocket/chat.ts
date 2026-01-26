@@ -13,6 +13,7 @@ import {
   getConversationMessages,
   updateConversationState,
   getQuestionnaireResponses,
+  saveQuestionnaireResponse,
   getUserProfile,
   getStoriesByCauseCategories,
 } from '@bangui/db';
@@ -146,20 +147,36 @@ const handleMessage = async (
   conversationId: UUID,
   message: ChatMessage
 ): Promise<void> => {
-  // Save user message
-  await createMessage(db, {
-    conversationId,
-    sender: 'user',
-    content: message.content,
-    metadata: message.metadata,
-  });
+  const messageTimestamp = Date.now();
 
   const conversation = await getConversation(db, conversationId);
   if (!conversation) return;
 
+  // Determine which question is being answered for metadata tracking
+  let questionBeingAnswered: string | undefined;
+  if (conversation.state === 'questionnaire_in_progress') {
+    const existingResponses = await getQuestionnaireResponses(db, userId);
+    const answeredIds = new Set(existingResponses.map((r) => r.questionId));
+    const currentQ = getNextQuestion(answeredIds);
+    questionBeingAnswered = currentQ?.id;
+  }
+
+  // Save user message with conversation path metadata
+  await createMessage(db, {
+    conversationId,
+    sender: 'user',
+    content: message.content,
+    metadata: {
+      ...message.metadata,
+      questionId: questionBeingAnswered,
+      conversationState: conversation.state,
+      timestamp: messageTimestamp,
+    },
+  });
+
   // Handle based on conversation state
   if (conversation.state === 'questionnaire_in_progress') {
-    await handleQuestionnaireResponse(db, ws, userId, conversationId, message.content);
+    await handleQuestionnaireResponse(db, ws, userId, conversationId, message.content, messageTimestamp);
   } else if (conversation.state === 'investment_suggestions') {
     await handleInvestmentQuery(db, ws, userId, conversationId, message.content);
   } else {
@@ -180,17 +197,40 @@ const handleQuestionnaireResponse = async (
   ws: WebSocket,
   userId: UUID,
   conversationId: UUID,
-  content: string
+  content: string,
+  messageTimestamp?: number
 ): Promise<void> => {
-  const responses = await getQuestionnaireResponses(db, userId);
-  const answeredIds = new Set(responses.map((r) => r.questionId));
+  // Get current progress BEFORE saving the new response
+  const existingResponses = await getQuestionnaireResponses(db, userId);
+  const answeredIds = new Set(existingResponses.map((r) => r.questionId));
+
+  // Determine which question is being answered (the first unanswered one)
+  const currentQuestion = getNextQuestion(answeredIds);
+
+  // Save the user's response to the questionnaire_responses table
+  if (currentQuestion) {
+    await saveQuestionnaireResponse(db, {
+      userId,
+      questionId: currentQuestion.id,
+      response: { text: content, raw: content },
+      responseTimeMs: messageTimestamp ? Date.now() - messageTimestamp : undefined,
+    });
+
+    // Add the current question to answered set for next check
+    answeredIds.add(currentQuestion.id);
+  }
+
+  // Get next question after saving this response
   const nextQ = getNextQuestion(answeredIds);
 
   // If questionnaire complete, analyze and move to suggestions
   if (!nextQ || isQuestionnaireComplete(answeredIds)) {
+    // Re-fetch all responses including the one we just saved
+    const allResponses = await getQuestionnaireResponses(db, userId);
+
     const analysis = analyzeResponses(
       userId,
-      responses.map((r) => ({ questionId: r.questionId, response: r.response }))
+      allResponses.map((r) => ({ questionId: r.questionId, response: r.response }))
     );
 
     const profile = await getUserProfile(db, userId);
@@ -224,11 +264,23 @@ ${storyList}
 
 Would you like to learn more about any of these, or explore other options?`;
 
-    // Save Vince's response
+    // Save Vince's response with analysis metadata for tracking
     await createMessage(db, {
       conversationId,
       sender: 'vince',
       content: responseContent,
+      metadata: {
+        actionType: 'questionnaire_complete',
+        analysis: {
+          archetype: analysis.archetypeProfile.primaryArchetype,
+          confidence: analysis.archetypeProfile.confidence,
+          topCauses: topCauses,
+        },
+        conversationPath: {
+          questionsAnswered: allResponses.length,
+          completedAt: new Date().toISOString(),
+        },
+      },
     });
 
     sendResponse(ws, conversationId, responseContent, [
@@ -237,13 +289,22 @@ Would you like to learn more about any of these, or explore other options?`;
     return;
   }
 
-  // Send next question
+  // Send next question with tracking metadata
   const responseContent = `Great, thanks for sharing that.\n\n${nextQ.text}`;
 
   await createMessage(db, {
     conversationId,
     sender: 'vince',
     content: responseContent,
+    metadata: {
+      questionId: nextQ.id,
+      questionSection: questionById.get(nextQ.id)?.sectionId,
+      conversationPath: {
+        questionsAnswered: answeredIds.size,
+        currentQuestionIndex: answeredIds.size + 1,
+        totalQuestions: 6,
+      },
+    },
   });
 
   sendResponse(

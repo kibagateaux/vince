@@ -262,6 +262,7 @@ export interface ChatMessage {
   readonly metadata?: {
     readonly platform: Platform;
     readonly replyTo?: UUID;
+    readonly questionId?: string;
   };
 }
 
