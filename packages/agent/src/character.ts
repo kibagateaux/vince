@@ -13,7 +13,6 @@ import type { Character } from '@elizaos/core';
 export const vinceCharacter: Character = {
   name: 'Vince',
   settings: {
-    model: 'claude-sonnet-4-20250514',
     maxInputTokens: 100000,
     maxOutputTokens: 8192,
   },
