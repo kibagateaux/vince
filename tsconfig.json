@@ -15,5 +15,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "exclude": ["node_modules", "dist"]
+  "files": [],
+  "exclude": ["node_modules", "dist"],
+  "references": [
+    { "path": "./packages/types" },
+    { "path": "./packages/db" },
+    { "path": "./packages/agent" },
+    { "path": "./packages/api" }
+  ]
 }
