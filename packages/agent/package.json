@@ -21,7 +21,7 @@
     "@bangui/types": "*",
     "@bangui/db": "*",
     "@elizaos/core": "^1.6.0",
-    "@anthropic-ai/sdk": "^0.32.0"
+    "openai": "^4.73.0"
   },
   "devDependencies": {
     "tsx": "^4.7.0",

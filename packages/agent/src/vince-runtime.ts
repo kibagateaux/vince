@@ -1,9 +1,9 @@
 /**
  * @module @bangui/agent/vince-runtime
- * Dynamic AI response generation using Anthropic SDK
+ * Dynamic AI response generation using OpenRouter API
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { vinceCharacter } from './character.js';
 import type { Question } from '@bangui/types';
 
@@ -29,9 +29,9 @@ export interface ResponseContext {
 
 /** Vince runtime configuration */
 export interface VinceRuntimeConfig {
-  /** Anthropic API key */
+  /** OpenRouter API key */
   apiKey: string;
-  /** Model to use (defaults to claude-sonnet-4-20250514) */
+  /** Model to use (optional - OpenRouter will use default if not specified) */
   model?: string;
   /** Max tokens for response */
   maxTokens?: number;
@@ -41,8 +41,12 @@ export interface VinceRuntimeConfig {
  * Creates a Vince runtime instance for generating dynamic responses
  */
 export function createVinceRuntime(config: VinceRuntimeConfig) {
-  const client = new Anthropic({ apiKey: config.apiKey });
-  const model = config.model ?? (vinceCharacter.settings?.model as string) ?? 'claude-sonnet-4-20250514';
+  const client = new OpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
+    apiKey: config.apiKey,
+  });
+  // Use provided model or let OpenRouter handle it with auto-routing
+  const model = config.model ?? 'openrouter/auto';
   const maxTokens = config.maxTokens ?? 1024;
 
   /**
@@ -153,25 +157,27 @@ Keep responses concise (2-4 sentences typically). Be warm and conversational, no
   async function generateResponse(context: ResponseContext): Promise<string> {
     const systemPrompt = buildSystemPrompt(context);
 
-    // Convert our messages to Anthropic format
-    // Anthropic API requires at least one message
-    const messages = context.messages.length > 0
+    // Convert our messages to OpenAI format with system prompt
+    const userMessages = context.messages.length > 0
       ? context.messages.map(m => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
         }))
       : [{ role: 'user' as const, content: 'Hello, I just connected.' }];
 
-    const response = await client.messages.create({
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...userMessages,
+    ];
+
+    const response = await client.chat.completions.create({
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
       messages,
     });
 
     // Extract text from response
-    const textBlock = response.content.find(block => block.type === 'text');
-    return textBlock?.text ?? "I'm here to help. What would you like to explore?";
+    return response.choices[0]?.message?.content ?? "I'm here to help. What would you like to explore?";
   }
 
   /**
@@ -205,20 +211,23 @@ Keep responses concise (2-4 sentences typically). Be warm and conversational, no
 
     const systemPrompt = buildSystemPrompt(context) + systemAddition;
 
-    // Anthropic API requires at least one message
-    const apiMessages = messages.length > 0
+    // Convert messages to OpenAI format with system prompt
+    const userMessages = messages.length > 0
       ? messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
       : [{ role: 'user' as const, content: 'Hello, I just connected.' }];
 
-    const response = await client.messages.create({
+    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...userMessages,
+    ];
+
+    const response = await client.chat.completions.create({
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
       messages: apiMessages,
     });
 
-    const textBlock = response.content.find(block => block.type === 'text');
-    return textBlock?.text ?? currentQuestion.text;
+    return response.choices[0]?.message?.content ?? currentQuestion.text;
   }
 
   /**

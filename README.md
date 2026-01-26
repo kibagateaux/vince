@@ -48,8 +48,10 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 # DAF Contract
 DAF_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 
-# Anthropic (for AI agent)
-ANTHROPIC_API_KEY=sk-ant-...
+# OpenRouter (for AI agent - supports multiple providers)
+OPENROUTER_API_KEY=sk-or-...
+# Optional: specify model (defaults to auto-routing)
+# OPENROUTER_MODEL=anthropic/claude-sonnet-4
 
 # Privy (Web UI authentication)
 VITE_PRIVY_APP_ID=your-privy-app-id
@@ -181,5 +183,5 @@ npm run db:seed
 - **Frontend**: React 18 + Vite + TailwindCSS + Privy for wallet auth
 - **Backend**: Hono (Node.js) + WebSocket for real-time chat
 - **Database**: PostgreSQL + Drizzle ORM
-- **AI Agent**: ElizaOS + Anthropic Claude for conversational AI
+- **AI Agent**: ElizaOS + OpenRouter for conversational AI (supports multiple providers)
 - **Blockchain**: Wagmi + Viem for Ethereum/Polygon/Arbitrum support
