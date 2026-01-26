@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "tsc --build",
     "dev": "npm run dev --workspaces --if-present",
     "start": "concurrently -n api,agent,web -c blue,green,magenta \"npm run start -w @bangui/api\" \"npm run start -w @bangui/agent\" \"npm run start -w @bangui/web\"",
     "test": "npm run test --workspaces --if-present",
