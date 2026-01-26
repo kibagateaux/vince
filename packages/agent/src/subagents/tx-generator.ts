@@ -11,6 +11,7 @@ import type {
   UnsignedTransaction,
   TransactionSimulation,
 } from '@bangui/types';
+import { logTX } from '../logger.js';
 
 // ============================================================================
 // Constants
@@ -100,13 +101,30 @@ export interface BuildDepositTxInput {
  * @param input - Transaction parameters
  * @returns Unsigned transaction ready for signing
  */
-export const buildDepositTx = (input: BuildDepositTxInput): UnsignedTransaction => ({
-  to: input.contractAddress,
-  data: encodeDepositData(input.userAddress, input.amount),
-  value: input.amount,
-  gasEstimate: DEFAULT_GAS_ESTIMATES[input.chain],
-  chainId: getChainId(input.chain),
-});
+export const buildDepositTx = (input: BuildDepositTxInput): UnsignedTransaction => {
+  logTX.info('Building deposit transaction', {
+    chain: input.chain,
+    amount: input.amount,
+    userAddress: input.userAddress.substring(0, 10) + '...',
+    contractAddress: input.contractAddress.substring(0, 10) + '...',
+  });
+
+  const tx = {
+    to: input.contractAddress,
+    data: encodeDepositData(input.userAddress, input.amount),
+    value: input.amount,
+    gasEstimate: DEFAULT_GAS_ESTIMATES[input.chain],
+    chainId: getChainId(input.chain),
+  };
+
+  logTX.debug('Transaction built', {
+    chainId: tx.chainId,
+    gasEstimate: tx.gasEstimate,
+    dataLength: tx.data.length,
+  });
+
+  return tx;
+};
 
 /**
  * Large amount threshold for warnings (100 ETH equivalent)
@@ -121,21 +139,40 @@ const LARGE_AMOUNT_THRESHOLD = BigInt('100000000000000000000');
 export const simulateTx = async (
   tx: UnsignedTransaction
 ): Promise<TransactionSimulation> => {
+  logTX.info('Simulating transaction', {
+    to: tx.to.substring(0, 10) + '...',
+    value: tx.value,
+    chainId: tx.chainId,
+    gasEstimate: tx.gasEstimate,
+  });
+
   const warnings: string[] = [];
 
   // Check for unusually large amounts
   const amount = BigInt(tx.value);
   if (amount > LARGE_AMOUNT_THRESHOLD) {
+    logTX.warn('Large deposit amount detected', {
+      amount: tx.value,
+      threshold: LARGE_AMOUNT_THRESHOLD.toString(),
+    });
     warnings.push('Large deposit amount detected. Please verify.');
   }
 
   // In production, this would call an RPC to simulate
   // For now, return optimistic result
-  return {
+  const result = {
     success: true,
     gasUsed: tx.gasEstimate,
     warnings,
   };
+
+  logTX.info('Simulation complete', {
+    success: result.success,
+    gasUsed: result.gasUsed,
+    warningCount: warnings.length,
+  });
+
+  return result;
 };
 
 /**

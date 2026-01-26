@@ -15,7 +15,7 @@ import {
   updateConversationState,
   getConversation,
 } from '@bangui/db';
-import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agent';
+import { analyzeResponses, isQuestionnaireComplete, allQuestions, logUser, logAgent, logAnalysis, logDB, logTimed } from '@bangui/agent';
 import type {
   QuestionnaireSubmitRequest,
   UUID,
@@ -40,12 +40,24 @@ export const createQuestionnaireRoutes = () => {
    * Submits questionnaire responses and triggers analysis if complete
    */
   router.post('/submit', async (c) => {
+    const done = logTimed('AGENT', '/questionnaire/submit');
+
     const db = c.get('db');
     const body = await c.req.json<QuestionnaireSubmitRequest>();
     const { userId, responses } = body;
 
+    logUser.info('Questionnaire submit request', {
+      userId,
+      responseCount: responses.length,
+      questionIds: responses.map(r => r.questionId),
+    });
+
     // Save each response
     for (const response of responses) {
+      logDB.debug('Saving questionnaire response', {
+        userId,
+        questionId: response.questionId,
+      });
       await saveQuestionnaireResponse(db, {
         userId,
         questionId: response.questionId,
@@ -59,7 +71,16 @@ export const createQuestionnaireRoutes = () => {
     const answeredIds = new Set(allResponses.map((r) => r.questionId));
     const complete = isQuestionnaireComplete(answeredIds);
 
+    logAgent.debug('Questionnaire completion check', {
+      userId,
+      answeredCount: answeredIds.size,
+      totalQuestions: allQuestions.length,
+      isComplete: complete,
+    });
+
     if (complete) {
+      logAnalysis.info('Questionnaire complete, running analysis', { userId });
+
       // Run analysis
       const analysis = analyzeResponses(
         userId,
@@ -69,9 +90,20 @@ export const createQuestionnaireRoutes = () => {
         }))
       );
 
+      logAnalysis.info('Analysis complete', {
+        userId,
+        archetype: analysis.archetypeProfile.primaryArchetype,
+        confidence: analysis.archetypeProfile.confidence,
+      });
+
       // Save results
       const profile = await getUserProfile(db, userId);
       if (profile) {
+        logDB.debug('Saving archetype scores', {
+          profileId: profile.id,
+          primaryArchetype: analysis.archetypeProfile.primaryArchetype,
+        });
+
         await saveArchetypeScores(db, {
           profileId: profile.id as UUID,
           scores: [
@@ -88,6 +120,11 @@ export const createQuestionnaireRoutes = () => {
           ],
         });
 
+        logDB.debug('Saving cause affinities', {
+          profileId: profile.id,
+          causeCount: Math.min(5, analysis.causeAffinities.length),
+        });
+
         await saveCauseAffinities(db, {
           profileId: profile.id as UUID,
           affinities: analysis.causeAffinities.slice(0, 5).map((a) => ({
@@ -98,6 +135,13 @@ export const createQuestionnaireRoutes = () => {
         });
       }
 
+      logUser.info('Questionnaire submission complete', {
+        userId,
+        complete: true,
+        archetype: analysis.archetypeProfile.primaryArchetype,
+      });
+
+      done();
       return c.json({
         complete: true,
         analysis: {
@@ -107,6 +151,14 @@ export const createQuestionnaireRoutes = () => {
       });
     }
 
+    logUser.info('Questionnaire submission complete (in progress)', {
+      userId,
+      complete: false,
+      progress: answeredIds.size,
+      total: allQuestions.length,
+    });
+
+    done();
     return c.json({
       complete: false,
       progress: answeredIds.size,
@@ -122,8 +174,11 @@ export const createQuestionnaireRoutes = () => {
     const db = c.get('db');
     const userId = c.req.param('userId') as UUID;
 
+    logUser.debug('Fetching analysis for user', { userId });
+
     const profile = await getUserProfile(db, userId);
     if (!profile) {
+      logUser.warn('Profile not found for analysis request', { userId });
       return c.json({ error: 'Profile not found' }, 404);
     }
 
@@ -131,6 +186,12 @@ export const createQuestionnaireRoutes = () => {
       (max, s) => (Number(s.score) > Number(max.score) ? s : max),
       profile.archetypeScores[0]!
     );
+
+    logUser.debug('Analysis retrieved', {
+      userId,
+      archetype: primaryScore.archetype,
+      confidence: primaryScore.confidence,
+    });
 
     return c.json({
       archetype: primaryScore.archetype,

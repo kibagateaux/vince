@@ -19,6 +19,13 @@ import type {
   PaginationParams,
 } from '@bangui/types';
 
+// Simple DB logging utility
+const logDB = {
+  debug: (msg: string, data?: unknown) => console.debug(`[DB] ${msg}`, data ?? ''),
+  info: (msg: string, data?: unknown) => console.info(`[DB] ${msg}`, data ?? ''),
+  error: (msg: string, data?: unknown) => console.error(`[DB] ${msg}`, data ?? ''),
+};
+
 // ============================================================================
 // User Queries
 // ============================================================================
@@ -29,8 +36,12 @@ import type {
  * @param id - User UUID
  * @returns User or null if not found
  */
-export const findUserById = async (db: Db, id: UUID) =>
-  db.query.users.findFirst({ where: eq(schema.users.id, id) });
+export const findUserById = async (db: Db, id: UUID) => {
+  logDB.debug('findUserById', { id });
+  const result = await db.query.users.findFirst({ where: eq(schema.users.id, id) });
+  logDB.debug('findUserById result', { found: !!result });
+  return result;
+};
 
 /**
  * Finds a user by wallet address
@@ -39,10 +50,12 @@ export const findUserById = async (db: Db, id: UUID) =>
  * @returns User or null if not found
  */
 export const findUserByWalletAddress = async (db: Db, address: Address) => {
+  logDB.debug('findUserByWalletAddress', { address: address.substring(0, 10) + '...' });
   const wallet = await db.query.wallets.findFirst({
     where: eq(schema.wallets.address, address.toLowerCase()),
     with: { user: true },
   });
+  logDB.debug('findUserByWalletAddress result', { found: !!wallet?.user });
   return wallet?.user ?? null;
 };
 
@@ -61,13 +74,18 @@ export interface CreateUserInput {
  * @param input - User creation input
  * @returns Created user with profile
  */
-export const createUser = async (db: Db, input: CreateUserInput) =>
-  db.transaction(async (tx) => {
-    const [user] = await tx.insert(schema.users).values(input).returning();
-    if (!user) throw new Error('Failed to create user');
-    await tx.insert(schema.userProfiles).values({ userId: user.id });
-    return user;
+export const createUser = async (db: Db, input: CreateUserInput) => {
+  logDB.info('createUser', { hasEmail: !!input.email, hasTelegram: !!input.telegramId, hasDiscord: !!input.discordId });
+  const user = await db.transaction(async (tx) => {
+    const [newUser] = await tx.insert(schema.users).values(input).returning();
+    if (!newUser) throw new Error('Failed to create user');
+    logDB.debug('User created, creating profile', { userId: newUser.id });
+    await tx.insert(schema.userProfiles).values({ userId: newUser.id });
+    return newUser;
   });
+  logDB.info('createUser complete', { userId: user.id });
+  return user;
+};
 
 /**
  * Updates user's last active timestamp
@@ -96,18 +114,24 @@ export const findOrCreateConversation = async (
   userId: UUID,
   platform: Platform
 ) => {
+  logDB.debug('findOrCreateConversation', { userId, platform });
   const existing = await db.query.conversations.findFirst({
     where: and(
       eq(schema.conversations.userId, userId),
       eq(schema.conversations.platform, platform)
     ),
   });
-  if (existing) return existing;
+  if (existing) {
+    logDB.debug('Found existing conversation', { conversationId: existing.id, state: existing.state });
+    return existing;
+  }
 
+  logDB.info('Creating new conversation', { userId, platform });
   const [conversation] = await db
     .insert(schema.conversations)
     .values({ userId, platform })
     .returning();
+  logDB.info('Conversation created', { conversationId: conversation!.id });
   return conversation!;
 };
 
@@ -121,19 +145,25 @@ export const updateConversationState = async (
   db: Db,
   id: UUID,
   state: ConversationState
-) =>
-  db
+) => {
+  logDB.info('updateConversationState', { conversationId: id, newState: state });
+  return db
     .update(schema.conversations)
     .set({ state, lastMessageAt: sql`NOW()` })
     .where(eq(schema.conversations.id, id));
+};
 
 /**
  * Gets conversation with current state
  * @param db - Database instance
  * @param id - Conversation UUID
  */
-export const getConversation = async (db: Db, id: UUID) =>
-  db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) });
+export const getConversation = async (db: Db, id: UUID) => {
+  logDB.debug('getConversation', { conversationId: id });
+  const conversation = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) });
+  logDB.debug('getConversation result', { found: !!conversation, state: conversation?.state });
+  return conversation;
+};
 
 // ============================================================================
 // Message Queries
@@ -155,15 +185,23 @@ export interface CreateMessageInput {
  * @param input - Message creation input
  * @returns Created message
  */
-export const createMessage = async (db: Db, input: CreateMessageInput) =>
-  db.transaction(async (tx) => {
-    const [message] = await tx.insert(schema.messages).values(input).returning();
+export const createMessage = async (db: Db, input: CreateMessageInput) => {
+  logDB.debug('createMessage', {
+    conversationId: input.conversationId,
+    sender: input.sender,
+    contentLength: input.content.length,
+  });
+  const message = await db.transaction(async (tx) => {
+    const [newMessage] = await tx.insert(schema.messages).values(input).returning();
     await tx
       .update(schema.conversations)
       .set({ lastMessageAt: sql`NOW()` })
       .where(eq(schema.conversations.id, input.conversationId));
-    return message!;
+    return newMessage!;
   });
+  logDB.debug('createMessage complete', { messageId: message.id });
+  return message;
+};
 
 /**
  * Gets messages for a conversation with pagination
@@ -176,13 +214,17 @@ export const getConversationMessages = async (
   db: Db,
   conversationId: UUID,
   pagination?: PaginationParams
-) =>
-  db.query.messages.findMany({
+) => {
+  logDB.debug('getConversationMessages', { conversationId, limit: pagination?.limit, offset: pagination?.offset });
+  const messages = await db.query.messages.findMany({
     where: eq(schema.messages.conversationId, conversationId),
     orderBy: asc(schema.messages.sentAt),
     limit: pagination?.limit,
     offset: pagination?.offset,
   });
+  logDB.debug('getConversationMessages result', { count: messages.length });
+  return messages;
+};
 
 // ============================================================================
 // Questionnaire Queries
@@ -208,10 +250,16 @@ export const saveQuestionnaireResponse = async (
   db: Db,
   input: SaveResponseInput
 ) => {
+  logDB.info('saveQuestionnaireResponse', {
+    userId: input.userId,
+    questionId: input.questionId,
+    responseTimeMs: input.responseTimeMs,
+  });
   const [response] = await db
     .insert(schema.questionnaireResponses)
     .values(input)
     .returning();
+  logDB.debug('saveQuestionnaireResponse complete', { responseId: response!.id });
   return response!;
 };
 
@@ -220,11 +268,15 @@ export const saveQuestionnaireResponse = async (
  * @param db - Database instance
  * @param userId - User UUID
  */
-export const getQuestionnaireResponses = async (db: Db, userId: UUID) =>
-  db.query.questionnaireResponses.findMany({
+export const getQuestionnaireResponses = async (db: Db, userId: UUID) => {
+  logDB.debug('getQuestionnaireResponses', { userId });
+  const responses = await db.query.questionnaireResponses.findMany({
     where: eq(schema.questionnaireResponses.userId, userId),
     orderBy: asc(schema.questionnaireResponses.answeredAt),
   });
+  logDB.debug('getQuestionnaireResponses result', { count: responses.length, questionIds: responses.map(r => r.questionId) });
+  return responses;
+};
 
 /**
  * Gets set of answered question IDs for a user
@@ -336,8 +388,9 @@ export const getStoriesByCauseCategories = async (
   db: Db,
   causeCategories: readonly string[],
   limit = 10
-) =>
-  db.query.stories.findMany({
+) => {
+  logDB.debug('getStoriesByCauseCategories', { causeCategories, limit });
+  const stories = await db.query.stories.findMany({
     where: and(
       eq(schema.stories.active, true),
       inArray(schema.stories.causeCategory, [...causeCategories])
@@ -345,6 +398,9 @@ export const getStoriesByCauseCategories = async (
     limit,
     orderBy: desc(schema.stories.createdAt),
   });
+  logDB.debug('getStoriesByCauseCategories result', { count: stories.length, titles: stories.map(s => s.title) });
+  return stories;
+};
 
 /**
  * Gets all active stories
@@ -412,10 +468,17 @@ export interface CreateDepositInput {
  * @returns Created deposit
  */
 export const createDeposit = async (db: Db, input: CreateDepositInput) => {
+  logDB.info('createDeposit', {
+    userId: input.userId,
+    walletId: input.walletId,
+    amount: input.amount,
+    token: input.token,
+  });
   const [deposit] = await db
     .insert(schema.deposits)
     .values({ ...input, status: 'pending' })
     .returning();
+  logDB.info('createDeposit complete', { depositId: deposit!.id, status: 'pending' });
   return deposit!;
 };
 
@@ -431,8 +494,13 @@ export const updateDepositStatus = async (
   id: UUID,
   status: DepositStatus,
   txHash?: string
-) =>
-  db
+) => {
+  logDB.info('updateDepositStatus', {
+    depositId: id,
+    newStatus: status,
+    hasTxHash: !!txHash,
+  });
+  return db
     .update(schema.deposits)
     .set({
       status,
@@ -440,6 +508,7 @@ export const updateDepositStatus = async (
       depositedAt: status === 'confirmed' ? sql`NOW()` : null,
     })
     .where(eq(schema.deposits.id, id));
+};
 
 /**
  * Gets deposit by ID

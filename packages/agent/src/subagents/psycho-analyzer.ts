@@ -14,6 +14,7 @@ import type {
   CauseAffinityResult,
   PsychopoliticalAnalysis,
 } from '@bangui/types';
+import { logAnalysis, logTimed } from '../logger.js';
 
 /** Response input for analysis */
 export interface ResponseInput {
@@ -95,6 +96,8 @@ const toStringResponse = (response: unknown): string =>
 export const calculateMoralVector = (
   responses: readonly ResponseInput[]
 ): MoralVector => {
+  logAnalysis.debug('calculateMoralVector', { responseCount: responses.length });
+
   const accumulator: Record<keyof MoralVector, number> = {
     care: 0,
     fairness: 0,
@@ -110,6 +113,7 @@ export const calculateMoralVector = (
     const weights = MORAL_WEIGHTS[str];
     if (weights) {
       matchCount++;
+      logAnalysis.debug('Moral weight match found', { response: str, weights });
       for (const [key, value] of Object.entries(weights)) {
         accumulator[key as keyof MoralVector] += value;
       }
@@ -117,7 +121,7 @@ export const calculateMoralVector = (
   }
 
   const maxPossible = Math.max(1, matchCount);
-  return {
+  const result = {
     care: normalize(accumulator.care, maxPossible),
     fairness: normalize(accumulator.fairness, maxPossible),
     loyalty: normalize(accumulator.loyalty, maxPossible),
@@ -125,6 +129,14 @@ export const calculateMoralVector = (
     sanctity: normalize(accumulator.sanctity, maxPossible),
     liberty: normalize(accumulator.liberty, maxPossible),
   };
+
+  logAnalysis.info('Moral vector calculated', {
+    matchCount,
+    vector: result,
+    dominantFoundation: Object.entries(result).reduce((a, b) => a[1] > b[1] ? a : b)[0],
+  });
+
+  return result;
 };
 
 /**
@@ -137,6 +149,8 @@ export const inferArchetype = (
   responses: readonly ResponseInput[],
   moralVector: MoralVector
 ): ArchetypeProfile => {
+  logAnalysis.debug('inferArchetype', { responseCount: responses.length, moralVector });
+
   const scores: Record<Archetype, number> = {
     impact_maximizer: 0,
     community_builder: 0,
@@ -151,11 +165,14 @@ export const inferArchetype = (
     const str = toStringResponse(response);
     const signals = ARCHETYPE_SIGNALS[str];
     if (signals) {
+      logAnalysis.debug('Archetype signal match', { response: str, signals });
       for (const [archetype, weight] of Object.entries(signals)) {
         scores[archetype as Archetype] += weight;
       }
     }
   }
+
+  logAnalysis.debug('Raw archetype scores from signals', { scores: { ...scores } });
 
   // Adjust based on moral vector
   scores.impact_maximizer += moralVector.fairness * 0.3 + moralVector.liberty * 0.2;
@@ -164,6 +181,8 @@ export const inferArchetype = (
   scores.values_expresser += moralVector.sanctity * 0.3 + moralVector.care * 0.3;
   scores.legacy_creator += moralVector.authority * 0.3 + moralVector.sanctity * 0.3;
   scores.opportunistic_giver += moralVector.care * 0.2;
+
+  logAnalysis.debug('Adjusted archetype scores (with moral vector)', { scores: { ...scores } });
 
   // Sort and pick top
   const sorted = Object.entries(scores)
@@ -177,6 +196,14 @@ export const inferArchetype = (
 
   const maxScore = Math.max(...Object.values(scores));
   const confidence = normalize(score, maxScore + 1);
+
+  logAnalysis.info('Archetype inferred', {
+    primary,
+    score,
+    confidence,
+    secondaryTraits,
+    allScores: Object.fromEntries(sorted),
+  });
 
   // Build cause alignment from archetype
   const causeAlignment: Record<string, number> = {};
@@ -193,6 +220,8 @@ export const inferArchetype = (
     causeAlignment.education = 0.8;
     causeAlignment.arts_culture = 0.7;
   }
+
+  logAnalysis.debug('Cause alignment from archetype', { causeAlignment });
 
   return {
     primaryArchetype: primary,
@@ -256,15 +285,34 @@ export const analyzeResponses = (
   userId: UUID,
   responses: readonly ResponseInput[]
 ): PsychopoliticalAnalysis => {
+  const done = logTimed('ANALYSIS', 'analyzeResponses');
+
+  logAnalysis.info('Starting psychopolitical analysis', {
+    userId,
+    responseCount: responses.length,
+    questionIds: responses.map(r => r.questionId),
+  });
+
   const moralVector = calculateMoralVector(responses);
   const archetypeProfile = inferArchetype(responses, moralVector);
   const causeAffinities = inferCauseAffinities(responses);
 
-  return {
+  const result = {
     userId,
     archetypeProfile,
     moralVector,
     causeAffinities,
     analyzedAt: Date.now() as Timestamp,
   };
+
+  logAnalysis.info('Psychopolitical analysis complete', {
+    userId,
+    primaryArchetype: archetypeProfile.primaryArchetype,
+    confidence: archetypeProfile.confidence,
+    topCauses: causeAffinities.slice(0, 3).map(c => c.causeId),
+    moralVector,
+  });
+
+  done();
+  return result;
 };

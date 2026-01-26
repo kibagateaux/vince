@@ -16,6 +16,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { createDb, type Db } from '@bangui/db';
+import { logSystem, logWS } from '@bangui/agent';
 import { createAuthRoutes } from './routes/auth.js';
 import { createQuestionnaireRoutes } from './routes/questionnaire.js';
 import { createDepositsRoutes } from './routes/deposits.js';
@@ -50,7 +51,15 @@ type AppContext = {
  * @returns Configured Hono app
  */
 export const createApp = (config: ServerConfig) => {
+  logSystem.info('Creating API application', {
+    hasDatabaseUrl: !!config.databaseUrl,
+    dafContractAddress: config.dafContractAddress?.substring(0, 10) + '...',
+    corsOrigins: config.corsOrigins,
+  });
+
   const db = createDb({ connectionString: config.databaseUrl });
+  logSystem.info('Database connection created');
+
   const app = new Hono<AppContext>();
 
   // Middleware
@@ -74,11 +83,13 @@ export const createApp = (config: ServerConfig) => {
   app.get('/health', (c) => c.json({ status: 'ok' }));
 
   // API routes
+  logSystem.debug('Registering API routes');
   app.route('/api/v1/auth', createAuthRoutes());
   app.route('/api/v1/questionnaire', createQuestionnaireRoutes());
   app.route('/api/v1/deposits', createDepositsRoutes());
   app.route('/api/v1/stories', createStoriesRoutes());
   app.route('/api/v1/admin', createAdminRoutes());
+  logSystem.debug('API routes registered');
 
   return { app, db };
 };
@@ -88,27 +99,39 @@ export const createApp = (config: ServerConfig) => {
  * @param config - Server configuration
  */
 export const startServer = (config: ServerConfig) => {
+  logSystem.info('Starting Bangui API server', {
+    port: config.port ?? 3001,
+  });
+
   const { app, db } = createApp(config);
   const port = config.port ?? 3001;
 
   const server = serve({ fetch: app.fetch, port }, (info) => {
+    logSystem.info('API server started', {
+      url: `http://localhost:${info.port}`,
+      port: info.port,
+    });
     console.log(`API server running on http://localhost:${info.port}`);
   });
 
   // Set up WebSocket server
+  logWS.info('Setting up WebSocket server');
   const wss = createChatServer({ db });
 
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '', 'http://localhost');
+    logWS.debug('WebSocket upgrade request', { pathname: url.pathname });
     if (url.pathname === '/ws/chat') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
     } else {
+      logWS.debug('Rejected WebSocket upgrade - invalid path', { pathname: url.pathname });
       socket.destroy();
     }
   });
 
+  logSystem.info('Server startup complete', { port });
   return server;
 };
 
