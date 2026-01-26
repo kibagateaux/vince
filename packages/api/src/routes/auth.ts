@@ -10,6 +10,7 @@ import {
   findUserByWalletAddress,
   createUser,
   findOrCreateConversation,
+  findOrCreateWallet,
 } from '@bangui/db';
 import type {
   AuthConnectRequest,
@@ -47,6 +48,11 @@ export const createAuthRoutes = () => {
 
     if (!user) {
       user = await createUser(db, {});
+    }
+
+    // Associate wallet with user so they can be found on future connections
+    if (walletAddress) {
+      await findOrCreateWallet(db, user.id as UUID, walletAddress, 'ethereum');
     }
 
     const conversation = await findOrCreateConversation(
