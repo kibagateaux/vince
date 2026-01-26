@@ -22,12 +22,18 @@ interface ProvidersProps {
  * Client-side providers wrapper
  */
 export const Providers: FC<ProvidersProps> = ({ children }) => {
-  // Show loading state if Privy not configured (shouldn't happen in production)
+  // Show error state if Privy not configured
   if (!PRIVY_APP_ID) {
     return (
       <QueryClientProvider client={queryClient}>
-        <div className="flex h-screen items-center justify-center">
-          <div className="text-gray-400">Loading...</div>
+        <div className="flex h-screen items-center justify-center bg-gray-50">
+          <div className="text-center p-8">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h1 className="text-xl font-bold text-gray-900 mb-2">Configuration Required</h1>
+            <p className="text-gray-600">
+              NEXT_PUBLIC_PRIVY_APP_ID environment variable is not set.
+            </p>
+          </div>
         </div>
       </QueryClientProvider>
     );
