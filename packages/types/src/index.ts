@@ -440,3 +440,78 @@ export type Result<T, E = Error> =
 
 /** Async result type */
 export type AsyncResult<T, E = Error> = Promise<Result<T, E>>;
+
+// ============================================================================
+// Admin Dashboard Types
+// ============================================================================
+
+/** Conversation health status for dashboard */
+export const ConversationHealth = {
+  SUCCESS: 'success',
+  FRUSTRATED: 'frustrated',
+  STALLED: 'stalled',
+  ACTIVE: 'active',
+  ABANDONED: 'abandoned',
+} as const;
+export type ConversationHealth =
+  (typeof ConversationHealth)[keyof typeof ConversationHealth];
+
+/** Conversation summary for dashboard list */
+export interface ConversationSummary {
+  readonly id: UUID;
+  readonly userId: UUID;
+  readonly platform: Platform;
+  readonly state: ConversationState;
+  readonly health: ConversationHealth;
+  readonly messageCount: number;
+  readonly userMessageCount: number;
+  readonly vinceMessageCount: number;
+  readonly startedAt: Timestamp;
+  readonly lastMessageAt: Timestamp;
+  readonly durationMinutes: number;
+  readonly hasDeposit: boolean;
+  readonly latestMessage: string | null;
+  readonly userWallet: Address | null;
+}
+
+/** Timeline message blob for visualization */
+export interface TimelineBlob {
+  readonly id: UUID;
+  readonly sender: Sender;
+  readonly sentAt: Timestamp;
+  readonly contentPreview: string;
+  readonly health: ConversationHealth;
+}
+
+/** Detailed conversation for admin view */
+export interface ConversationDetail {
+  readonly id: UUID;
+  readonly userId: UUID;
+  readonly userWallet: Address | null;
+  readonly platform: Platform;
+  readonly state: ConversationState;
+  readonly health: ConversationHealth;
+  readonly startedAt: Timestamp;
+  readonly lastMessageAt: Timestamp;
+  readonly messages: readonly Message[];
+  readonly timeline: readonly TimelineBlob[];
+  readonly hasDeposit: boolean;
+  readonly depositAmount: BigIntString | null;
+}
+
+/** Admin message injection request */
+export interface AdminMessageRequest {
+  readonly conversationId: UUID;
+  readonly content: string;
+  readonly sender: 'vince' | 'system';
+}
+
+/** Dashboard statistics */
+export interface DashboardStats {
+  readonly totalConversations: number;
+  readonly activeConversations: number;
+  readonly successfulDeposits: number;
+  readonly frustratedConversations: number;
+  readonly stalledConversations: number;
+  readonly averageDurationMinutes: number;
+}

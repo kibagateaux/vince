@@ -20,6 +20,7 @@ import { createAuthRoutes } from './routes/auth.js';
 import { createQuestionnaireRoutes } from './routes/questionnaire.js';
 import { createDepositsRoutes } from './routes/deposits.js';
 import { createStoriesRoutes } from './routes/stories.js';
+import { createAdminRoutes } from './routes/admin.js';
 import { createChatServer } from './websocket/chat.js';
 import type { Address } from '@bangui/types';
 
@@ -77,6 +78,7 @@ export const createApp = (config: ServerConfig) => {
   app.route('/api/v1/questionnaire', createQuestionnaireRoutes());
   app.route('/api/v1/deposits', createDepositsRoutes());
   app.route('/api/v1/stories', createStoriesRoutes());
+  app.route('/api/v1/admin', createAdminRoutes());
 
   return { app, db };
 };

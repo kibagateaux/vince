@@ -13,6 +13,10 @@ import type {
   Chain,
   BigIntString,
   Story,
+  ConversationSummary,
+  ConversationDetail,
+  DashboardStats,
+  Sender,
 } from '@bangui/types';
 
 const API_BASE = '/api/v1';
@@ -95,5 +99,67 @@ export const getRecommendedStories = async (
   userId: UUID
 ): Promise<{ stories: readonly Story[]; personalized: boolean }> => {
   const res = await fetch(`${API_BASE}/stories/recommended/${userId}`);
+  return res.json();
+};
+
+// ============================================================================
+// Admin Dashboard API
+// ============================================================================
+
+/**
+ * Gets all conversations with health status
+ * @param params - Pagination params
+ */
+export const getConversations = async (params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  conversations: ConversationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}> => {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  const res = await fetch(`${API_BASE}/admin/conversations?${query}`);
+  return res.json();
+};
+
+/**
+ * Gets detailed conversation with messages and timeline
+ * @param conversationId - Conversation UUID
+ */
+export const getConversationDetail = async (
+  conversationId: UUID
+): Promise<ConversationDetail> => {
+  const res = await fetch(`${API_BASE}/admin/conversations/${conversationId}`);
+  return res.json();
+};
+
+/**
+ * Gets dashboard statistics
+ */
+export const getDashboardStats = async (): Promise<DashboardStats> => {
+  const res = await fetch(`${API_BASE}/admin/stats`);
+  return res.json();
+};
+
+/**
+ * Injects an admin message into a conversation
+ * @param conversationId - Conversation UUID
+ * @param content - Message content
+ * @param sender - Sender type (vince or system)
+ */
+export const injectAdminMessage = async (
+  conversationId: UUID,
+  content: string,
+  sender: 'vince' | 'system'
+): Promise<{ success: boolean }> => {
+  const res = await fetch(`${API_BASE}/admin/conversations/${conversationId}/message`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId, content, sender }),
+  });
   return res.json();
 };
