@@ -44,7 +44,7 @@ const getTokenDecimals = (token: string): number => {
 export const Chat: FC = () => {
   const { authenticated, user, login } = usePrivy();
   const { wallets } = useWallets();
-  const { messages, connectionState, sendMessage, connect } = useChat();
+  const { messages, connectionState, isWaitingForResponse, sendMessage, connect } = useChat();
   const [input, setInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [session, setSession] = useState<Session | null>(null);
@@ -256,6 +256,21 @@ export const Chat: FC = () => {
             onToggleOption={handleToggleOption}
           />
         ))}
+        {/* Typing indicator */}
+        {isWaitingForResponse && (
+          <div className="flex items-start gap-3 mb-4">
+            <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+              <span className="text-sm font-bold text-white">V</span>
+            </div>
+            <div className="bg-gray-100 rounded-2xl rounded-tl-md px-4 py-3">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </main>
 

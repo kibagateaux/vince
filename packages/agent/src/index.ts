@@ -25,3 +25,10 @@ export {
   formatAmount,
   parseAmount,
 } from './subagents/tx-generator.js';
+export {
+  createVinceRuntime,
+  type VinceRuntime,
+  type VinceRuntimeConfig,
+  type ConversationMessage,
+  type ResponseContext,
+} from './vince-runtime.js';

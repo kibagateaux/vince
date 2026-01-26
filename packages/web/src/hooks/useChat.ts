@@ -11,6 +11,7 @@ import type { DisplayMessage, ConnectionState, Session } from '../lib/types.js';
 export interface UseChatReturn {
   readonly messages: readonly DisplayMessage[];
   readonly connectionState: ConnectionState;
+  readonly isWaitingForResponse: boolean;
   readonly sendMessage: (content: string) => void;
   readonly connect: (session: Session) => void;
   readonly disconnect: () => void;
@@ -23,6 +24,7 @@ export interface UseChatReturn {
 export const useChat = (): UseChatReturn => {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const currentQuestionIdRef = useRef<string | undefined>(undefined);
@@ -40,27 +42,46 @@ export const useChat = (): UseChatReturn => {
 
     ws.onopen = () => {
       setConnectionState('connected');
+      // Waiting for initial welcome message
+      setIsWaitingForResponse(true);
     };
 
     ws.onmessage = (event) => {
       try {
-        const response = JSON.parse(event.data) as AgentResponse;
-        const message: DisplayMessage = {
-          id: crypto.randomUUID(),
-          sender: 'vince',
-          content: response.content,
-          timestamp: Date.now(),
-          actions: response.actions,
-        };
-        setMessages((prev) => [...prev, message]);
+        const data = JSON.parse(event.data);
 
-        // Track current question for next user response
-        const questionnaireAction = response.actions?.find((a) => a.type === 'questionnaire');
-        if (questionnaireAction?.data?.questionId) {
-          currentQuestionIdRef.current = questionnaireAction.data.questionId as string;
-        } else if (response.actions?.some((a) => a.type === 'suggestion')) {
-          // Clear question tracking when questionnaire is complete
-          currentQuestionIdRef.current = undefined;
+        // Handle different message types
+        if (data.type === 'history') {
+          // User message from conversation history
+          const message: DisplayMessage = {
+            id: crypto.randomUUID(),
+            sender: 'user',
+            content: data.content,
+            timestamp: Date.now(),
+          };
+          setMessages((prev) => [...prev, message]);
+        } else {
+          // Vince response (type === 'response')
+          const response = data as AgentResponse;
+          const message: DisplayMessage = {
+            id: crypto.randomUUID(),
+            sender: 'vince',
+            content: response.content,
+            timestamp: Date.now(),
+            actions: response.actions,
+          };
+          setMessages((prev) => [...prev, message]);
+          // Response received, stop showing typing indicator
+          setIsWaitingForResponse(false);
+
+          // Track current question for next user response
+          const questionnaireAction = response.actions?.find((a) => a.type === 'questionnaire');
+          if (questionnaireAction?.data?.questionId) {
+            currentQuestionIdRef.current = questionnaireAction.data.questionId as string;
+          } else if (response.actions?.some((a) => a.type === 'suggestion')) {
+            // Clear question tracking when questionnaire is complete
+            currentQuestionIdRef.current = undefined;
+          }
         }
       } catch (err) {
         console.error('Failed to parse message:', err);
@@ -106,6 +127,9 @@ export const useChat = (): UseChatReturn => {
     };
     setMessages((prev) => [...prev, userMessage]);
 
+    // Show typing indicator while waiting for response
+    setIsWaitingForResponse(true);
+
     // Send via WebSocket with question tracking metadata
     const chatMessage: ChatMessage = {
       type: 'message',
@@ -132,6 +156,7 @@ export const useChat = (): UseChatReturn => {
   return {
     messages,
     connectionState,
+    isWaitingForResponse,
     sendMessage,
     connect,
     disconnect,
