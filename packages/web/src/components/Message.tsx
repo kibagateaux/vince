@@ -47,13 +47,18 @@ export const Message: FC<MessageProps> = ({ message, onAction }) => {
                 ));
               }
               if (action.type === 'deposit') {
+                const amount = action.data.amount as string | undefined;
+                const token = action.data.token as string | undefined;
+                const buttonLabel = amount && token
+                  ? `Deposit ${amount} ${token}`
+                  : 'Make Deposit';
                 return (
                   <button
                     key={i}
                     onClick={() => onAction?.(action)}
                     className="rounded-full bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition-colors"
                   >
-                    Make Deposit
+                    {buttonLabel}
                   </button>
                 );
               }

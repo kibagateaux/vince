@@ -4,21 +4,50 @@
  */
 
 import { FC, useState, useRef, useEffect, useCallback } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { createWalletClient, custom, type Chain as ViemChain } from 'viem';
+import { mainnet, sepolia, polygon, arbitrum } from 'viem/chains';
 import { useChat } from '../hooks/useChat.js';
-import { connectSession, submitQuestionnaire } from '../lib/api.js';
+import { connectSession, prepareDeposit, confirmDeposit } from '../lib/api.js';
 import { Message } from './Message.js';
-import type { ActionPrompt, UUID } from '@bangui/types';
+import type { ActionPrompt, UUID, Chain, BigIntString } from '@bangui/types';
 import type { Session } from '../lib/types.js';
 
 /**
  * Chat interface with message list and input
  */
+/**
+ * Parses human-readable amount to wei string
+ * @param amount - Human-readable amount (e.g., "10" or "0.5")
+ * @param decimals - Token decimals (default 18 for ETH, 6 for USDC/USDT)
+ */
+const parseAmountToWei = (amount: string, decimals: number): BigIntString => {
+  const [whole = '0', fraction = ''] = amount.split('.');
+  const paddedFraction = fraction.padEnd(decimals, '0').slice(0, decimals);
+  return `${whole}${paddedFraction}` as BigIntString;
+};
+
+/**
+ * Gets token decimals for common tokens
+ */
+const getTokenDecimals = (token: string): number => {
+  const decimalsMap: Record<string, number> = {
+    ETH: 18,
+    WETH: 18,
+    USDC: 6,
+    USDT: 6,
+    DAI: 18,
+  };
+  return decimalsMap[token.toUpperCase()] ?? 18;
+};
+
 export const Chat: FC = () => {
   const { authenticated, user, login } = usePrivy();
+  const { wallets } = useWallets();
   const { messages, connectionState, sendMessage, connect } = useChat();
   const [input, setInput] = useState('');
   const [session, setSession] = useState<Session | null>(null);
+  const [isProcessingDeposit, setIsProcessingDeposit] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom on new messages
@@ -57,10 +86,90 @@ export const Chat: FC = () => {
         const questionId = action.data.questionId as string;
         const options = action.data.options as string[];
         // User needs to select - we'll send the message which will be processed
+      } else if (action.type === 'deposit' && session && user?.wallet?.address) {
+        // Handle deposit action
+        const { amount, token, chain } = action.data as {
+          amount?: string;
+          token?: string;
+          chain?: Chain;
+        };
+
+        if (!amount || !token) {
+          // No amount specified, prompt user
+          sendMessage('I want to make a deposit');
+          return;
+        }
+
+        // Find the connected wallet
+        const wallet = wallets.find(w => w.address === user.wallet?.address);
+        if (!wallet) {
+          sendMessage('Could not find connected wallet. Please reconnect.');
+          return;
+        }
+
+        setIsProcessingDeposit(true);
+        try {
+          const walletAddress = user.wallet.address as `0x${string}`;
+          const decimals = getTokenDecimals(token);
+          const amountWei = parseAmountToWei(amount, decimals);
+
+          // Prepare the deposit transaction via API
+          const { depositId, transaction } = await prepareDeposit({
+            userId: session.userId,
+            walletAddress,
+            amount: amountWei,
+            token,
+            chain: chain ?? 'ethereum',
+          });
+
+          // Get the wallet provider and create a viem wallet client
+          const provider = await wallet.getEthereumProvider();
+
+          // Get the current chain ID from the wallet
+          const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
+          const currentChainId = parseInt(chainIdHex, 16);
+
+          // Map chain ID to viem chain config
+          const chainMap: Record<number, ViemChain> = {
+            1: mainnet,
+            11155111: sepolia,
+            137: polygon,
+            42161: arbitrum,
+          };
+          const currentChain = chainMap[currentChainId] ?? mainnet;
+
+          const walletClient = createWalletClient({
+            account: walletAddress,
+            chain: currentChain,
+            transport: custom(provider),
+          });
+
+          // Send the transaction on the wallet's current chain
+          const txHash = await walletClient.sendTransaction({
+            to: transaction.to,
+            data: transaction.data,
+            value: BigInt(transaction.value),
+          });
+
+          // Confirm the deposit with the tx hash
+          if (txHash) {
+            await confirmDeposit(depositId, txHash);
+            sendMessage(`My deposit of ${amount} ${token} was confirmed! Transaction: ${txHash}`);
+          }
+        } catch (error) {
+          console.error('Deposit failed:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
+            sendMessage('Transaction was cancelled.');
+          } else {
+            sendMessage('There was an issue with the deposit. Please try again.');
+          }
+        } finally {
+          setIsProcessingDeposit(false);
+        }
       }
-      // Other action types handled by sending message
     },
-    [session]
+    [session, user, wallets, sendMessage]
   );
 
   // Show login if not authenticated

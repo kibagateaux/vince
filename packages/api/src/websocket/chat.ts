@@ -318,6 +318,55 @@ Would you like to learn more about any of these, or explore other options?`;
 };
 
 /**
+ * Parses deposit intent from user message
+ * Extracts amount and token from natural language like:
+ * - "donate 10 USDC"
+ * - "I want to give 10 usdc"
+ * - "10 USDC please"
+ * - "let me deposit 10 eth"
+ */
+const parseDepositIntent = (
+  content: string
+): { amount: string; token: string } | null => {
+  const knownTokens = ['USDC', 'ETH', 'USDT', 'DAI', 'WETH'];
+  const tokenPattern = knownTokens.join('|');
+
+  // Try multiple patterns from most specific to most general
+  const patterns = [
+    // "donate 10 USDC", "give 10 eth", "deposit 10 dai"
+    new RegExp(`(?:donate|deposit|invest|give|contribute|send|put)\\s+(\\d+(?:\\.\\d+)?)\\s*(${tokenPattern})`, 'i'),
+    // "10 USDC please", "10 eth"
+    new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${tokenPattern})(?:\\s|$|\\.|,|!)`, 'i'),
+    // "USDC 10", "eth 10"
+    new RegExp(`(${tokenPattern})\\s+(\\d+(?:\\.\\d+)?)`, 'i'),
+  ];
+
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match && match[1] && match[2]) {
+      // Handle both "amount token" and "token amount" patterns
+      let amount: string;
+      let token: string;
+
+      if (/^\d/.test(match[1])) {
+        // First capture group is the amount
+        amount = match[1];
+        token = match[2].toUpperCase();
+      } else {
+        // First capture group is the token
+        token = match[1].toUpperCase();
+        amount = match[2];
+      }
+
+      if (knownTokens.includes(token)) {
+        return { amount, token };
+      }
+    }
+  }
+  return null;
+};
+
+/**
  * Handles investment-related queries
  */
 const handleInvestmentQuery = async (
@@ -329,19 +378,46 @@ const handleInvestmentQuery = async (
 ): Promise<void> => {
   const lowerContent = content.toLowerCase();
 
-  if (lowerContent.includes('deposit') || lowerContent.includes('invest')) {
-    const responseContent = `I'd be happy to help you make a deposit. Here's how it works:
+  // Check if message contains deposit/invest intent
+  if (lowerContent.includes('deposit') || lowerContent.includes('invest') ||
+      lowerContent.includes('donate') || lowerContent.includes('give') ||
+      lowerContent.includes('contribute')) {
 
-1. Connect your wallet using the button above
-2. Choose an amount to deposit
-3. Review and sign the transaction
+    // Try to parse amount and token from the message
+    const depositIntent = parseDepositIntent(content);
 
-Once confirmed, your funds will be allocated according to your preferences. Would you like to proceed?`;
+    if (depositIntent) {
+      // User specified amount and token - prompt to confirm and sign
+      const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${depositIntent.token}.
+
+Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
+
+      await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
+      sendResponse(ws, conversationId, responseContent, [
+        {
+          type: 'deposit',
+          data: {
+            action: 'sign',
+            amount: depositIntent.amount,
+            token: depositIntent.token,
+            chain: 'ethereum', // Default to ethereum, could be made configurable
+          }
+        },
+      ]);
+      return;
+    }
+
+    // No amount specified - ask for details
+    const responseContent = `I'd be happy to help you make a deposit!
+
+Just tell me how much you'd like to donate and which token. For example:
+- "Donate 10 USDC"
+- "Invest 0.5 ETH"
+
+What amount would you like to contribute?`;
 
     await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
-    sendResponse(ws, conversationId, responseContent, [
-      { type: 'deposit', data: { action: 'prepare' } },
-    ]);
+    sendResponse(ws, conversationId, responseContent);
     return;
   }
 
