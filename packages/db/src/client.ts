@@ -30,6 +30,9 @@ export interface DbConfig {
 export const createDb = (config: DbConfig) => {
   const client = postgres(config.connectionString, {
     max: config.maxConnections ?? 10,
+    idle_timeout: 20, // Close idle connections after 20 seconds (serverless)
+    connect_timeout: 10, // Connection timeout in seconds
+    prepare: false, // Disable prepared statements for serverless Postgres (Neon, etc.)
   });
   return drizzle(client, { schema });
 };

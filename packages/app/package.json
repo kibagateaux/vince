@@ -1,0 +1,35 @@
+{
+  "name": "@bangui/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@bangui/agent": "*",
+    "@bangui/db": "*",
+    "@bangui/types": "*",
+    "dotenv": "^16.4.0",
+    "@privy-io/react-auth": "^1.92.0",
+    "@privy-io/wagmi": "^0.2.0",
+    "@tanstack/react-query": "^5.60.0",
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "viem": "^2.21.0",
+    "wagmi": "^2.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.3"
+  }
+}

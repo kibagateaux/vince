@@ -3,13 +3,14 @@
  * API server for Bangui DAF platform
  */
 
-import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-// Load .env from monorepo root
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(__dirname, '../../../.env') });
+// Load .env in development only (not needed for Vercel serverless)
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  const { config } = await import('dotenv');
+  const { resolve, dirname } = await import('path');
+  const { fileURLToPath } = await import('url');
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  config({ path: resolve(__dirname, '../../../.env') });
+}
 
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -21,6 +22,7 @@ import { createQuestionnaireRoutes } from './routes/questionnaire.js';
 import { createDepositsRoutes } from './routes/deposits.js';
 import { createStoriesRoutes } from './routes/stories.js';
 import { createAdminRoutes } from './routes/admin.js';
+import { createChatRoutes } from './routes/chat.js';
 import { createChatServer } from './websocket/chat.js';
 import type { Address } from '@bangui/types';
 
@@ -79,6 +81,7 @@ export const createApp = (config: ServerConfig) => {
   app.route('/api/v1/deposits', createDepositsRoutes());
   app.route('/api/v1/stories', createStoriesRoutes());
   app.route('/api/v1/admin', createAdminRoutes());
+  app.route('/api/v1/chat', createChatRoutes());
 
   return { app, db };
 };

@@ -1,10 +1,10 @@
 /**
  * @module @bangui/web/hooks/useChat
- * WebSocket chat connection hook
+ * Chat connection hook - supports WebSocket (local) and REST polling (Vercel/production)
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { UUID, ChatMessage, AgentResponse } from '@bangui/types';
+import type { UUID, ChatMessage, AgentResponse, ActionPrompt } from '@bangui/types';
 import type { DisplayMessage, ConnectionState, Session } from '../lib/types.js';
 
 /** Chat hook return type */
@@ -17,8 +17,38 @@ export interface UseChatReturn {
   readonly disconnect: () => void;
 }
 
+/** Response from REST chat API */
+interface ChatApiResponse {
+  messages: Array<{
+    id: string;
+    sender: string;
+    content: string;
+    actions?: ActionPrompt[];
+    timestamp: number;
+  }>;
+  state: string;
+  response?: AgentResponse;
+}
+
 /**
- * Hook for managing WebSocket chat connection
+ * Detect if we should use REST polling instead of WebSocket
+ * Use polling on Vercel/production, WebSocket for local development
+ */
+const usePollingMode = (): boolean => {
+  // Check explicit environment variable first
+  if (import.meta.env.VITE_USE_POLLING === 'true') {
+    return true;
+  }
+  // Use polling for non-localhost hostnames (production)
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Hook for managing chat connection
+ * Automatically uses WebSocket for local dev or REST polling for production
  * @returns Chat state and methods
  */
 export const useChat = (): UseChatReturn => {
@@ -28,14 +58,160 @@ export const useChat = (): UseChatReturn => {
   const wsRef = useRef<WebSocket | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const currentQuestionIdRef = useRef<string | undefined>(undefined);
+  const pollingIntervalRef = useRef<number | null>(null);
+  const lastMessageIdRef = useRef<string | null>(null);
+  const isPollingMode = usePollingMode();
 
-  const connect = useCallback((session: Session) => {
+  // ============================================================================
+  // REST Polling Implementation (for Vercel/production)
+  // ============================================================================
+
+  const connectPolling = useCallback(async (session: Session) => {
+    sessionRef.current = session;
+    setConnectionState('connecting');
+    setMessages([]); // Clear messages on new connection
+
+    try {
+      const res = await fetch('/api/v1/chat/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: session.conversationId,
+          userId: session.userId,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Chat connect failed: ${res.status}`);
+      }
+
+      const data: ChatApiResponse = await res.json();
+
+      // Convert API messages to display format
+      const displayMessages: DisplayMessage[] = data.messages.map((m) => ({
+        id: m.id,
+        sender: m.sender as 'user' | 'vince',
+        content: m.content,
+        actions: m.actions,
+        timestamp: m.timestamp,
+      }));
+
+      setMessages(displayMessages);
+      setConnectionState('connected');
+
+      // Track last message ID for polling
+      if (displayMessages.length > 0) {
+        lastMessageIdRef.current = displayMessages[displayMessages.length - 1]!.id;
+      }
+
+      // Track current question from last Vince message
+      const lastVinceMessage = [...displayMessages].reverse().find((m) => m.sender === 'vince');
+      if (lastVinceMessage?.actions) {
+        const questionnaireAction = lastVinceMessage.actions.find(
+          (a) => a.type === 'questionnaire'
+        );
+        if (questionnaireAction?.data?.questionId) {
+          currentQuestionIdRef.current = questionnaireAction.data.questionId as string;
+        }
+      }
+    } catch (err) {
+      console.error('Chat connect error:', err);
+      setConnectionState('error');
+    }
+  }, []);
+
+  const sendMessagePolling = useCallback(async (content: string) => {
+    if (!sessionRef.current) {
+      console.error('No session');
+      return;
+    }
+
+    // Optimistic update - add user message immediately
+    const userMessage: DisplayMessage = {
+      id: crypto.randomUUID(),
+      sender: 'user',
+      content,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsWaitingForResponse(true);
+
+    try {
+      const res = await fetch('/api/v1/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: sessionRef.current.conversationId,
+          userId: sessionRef.current.userId,
+          content,
+          metadata: {
+            questionId: currentQuestionIdRef.current,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Chat send failed: ${res.status}`);
+      }
+
+      const data: ChatApiResponse = await res.json();
+
+      // Replace messages with server response (includes all messages)
+      const displayMessages: DisplayMessage[] = data.messages.map((m) => ({
+        id: m.id,
+        sender: m.sender as 'user' | 'vince',
+        content: m.content,
+        actions: m.actions,
+        timestamp: m.timestamp,
+      }));
+
+      setMessages(displayMessages);
+
+      // Track last message ID
+      if (displayMessages.length > 0) {
+        lastMessageIdRef.current = displayMessages[displayMessages.length - 1]!.id;
+      }
+
+      // Update current question tracking
+      if (data.response?.actions) {
+        const questionnaireAction = data.response.actions.find((a) => a.type === 'questionnaire');
+        if (questionnaireAction?.data?.questionId) {
+          currentQuestionIdRef.current = questionnaireAction.data.questionId as string;
+        } else if (data.response.actions.some((a) => a.type === 'suggestion')) {
+          currentQuestionIdRef.current = undefined;
+        }
+      } else {
+        currentQuestionIdRef.current = undefined;
+      }
+    } catch (err) {
+      console.error('Chat send error:', err);
+    } finally {
+      setIsWaitingForResponse(false);
+    }
+  }, []);
+
+  const disconnectPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    sessionRef.current = null;
+    lastMessageIdRef.current = null;
+    setConnectionState('disconnected');
+  }, []);
+
+  // ============================================================================
+  // WebSocket Implementation (for local development)
+  // ============================================================================
+
+  const connectWebSocket = useCallback((session: Session) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
     sessionRef.current = session;
     setConnectionState('connecting');
+    setMessages([]); // Clear messages on new connection
 
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat?conversationId=${session.conversationId}&userId=${session.userId}`;
     const ws = new WebSocket(wsUrl);
@@ -100,14 +276,14 @@ export const useChat = (): UseChatReturn => {
     wsRef.current = ws;
   }, []);
 
-  const disconnect = useCallback(() => {
+  const disconnectWebSocket = useCallback(() => {
     wsRef.current?.close();
     wsRef.current = null;
     sessionRef.current = null;
     setConnectionState('disconnected');
   }, []);
 
-  const sendMessage = useCallback((content: string) => {
+  const sendMessageWebSocket = useCallback((content: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.error('WebSocket not connected');
       return;
@@ -146,10 +322,47 @@ export const useChat = (): UseChatReturn => {
     currentQuestionIdRef.current = undefined;
   }, []);
 
+  // ============================================================================
+  // Select implementation based on mode
+  // ============================================================================
+
+  const connect = useCallback(
+    (session: Session) => {
+      if (isPollingMode) {
+        connectPolling(session);
+      } else {
+        connectWebSocket(session);
+      }
+    },
+    [isPollingMode, connectPolling, connectWebSocket]
+  );
+
+  const disconnect = useCallback(() => {
+    if (isPollingMode) {
+      disconnectPolling();
+    } else {
+      disconnectWebSocket();
+    }
+  }, [isPollingMode, disconnectPolling, disconnectWebSocket]);
+
+  const sendMessage = useCallback(
+    (content: string) => {
+      if (isPollingMode) {
+        sendMessagePolling(content);
+      } else {
+        sendMessageWebSocket(content);
+      }
+    },
+    [isPollingMode, sendMessagePolling, sendMessageWebSocket]
+  );
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       wsRef.current?.close();
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
     };
   }, []);
 
