@@ -46,6 +46,7 @@ export const Chat: FC = () => {
   const { wallets } = useWallets();
   const { messages, connectionState, sendMessage, connect } = useChat();
   const [input, setInput] = useState('');
+  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [session, setSession] = useState<Session | null>(null);
   const [isProcessingDeposit, setIsProcessingDeposit] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -75,8 +76,26 @@ export const Chat: FC = () => {
       if (!input.trim()) return;
       sendMessage(input.trim());
       setInput('');
+      setSelectedOptions(new Set());
     },
     [input, sendMessage]
+  );
+
+  const handleToggleOption = useCallback(
+    (option: string) => {
+      setSelectedOptions((prev) => {
+        const next = new Set(prev);
+        if (next.has(option)) {
+          next.delete(option);
+        } else {
+          next.add(option);
+        }
+        // Update input field with selected options
+        setInput(Array.from(next).join(', '));
+        return next;
+      });
+    },
+    []
   );
 
   const handleAction = useCallback(
@@ -229,7 +248,13 @@ export const Chat: FC = () => {
           </div>
         )}
         {messages.map((msg) => (
-          <Message key={msg.id} message={msg} onAction={handleAction} />
+          <Message
+            key={msg.id}
+            message={msg}
+            onAction={handleAction}
+            selectedOptions={selectedOptions}
+            onToggleOption={handleToggleOption}
+          />
         ))}
         <div ref={messagesEndRef} />
       </main>

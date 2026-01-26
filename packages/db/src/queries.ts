@@ -448,3 +448,66 @@ export const updateDepositStatus = async (
  */
 export const getDeposit = async (db: Db, id: UUID) =>
   db.query.deposits.findFirst({ where: eq(schema.deposits.id, id) });
+
+// ============================================================================
+// Admin Dashboard Queries
+// ============================================================================
+
+/**
+ * Gets all conversations with their message count and latest message
+ * @param db - Database instance
+ * @param pagination - Pagination params
+ * @returns Conversations ordered by lastMessageAt descending
+ */
+export const getAllConversations = async (
+  db: Db,
+  pagination?: PaginationParams
+) =>
+  db.query.conversations.findMany({
+    orderBy: desc(schema.conversations.lastMessageAt),
+    limit: pagination?.limit,
+    offset: pagination?.offset,
+    with: {
+      user: true,
+      messages: {
+        orderBy: asc(schema.messages.sentAt),
+      },
+    },
+  });
+
+/**
+ * Gets a single conversation with all messages for detailed view
+ * @param db - Database instance
+ * @param conversationId - Conversation UUID
+ * @returns Conversation with user and all messages
+ */
+export const getConversationWithMessages = async (
+  db: Db,
+  conversationId: UUID
+) =>
+  db.query.conversations.findFirst({
+    where: eq(schema.conversations.id, conversationId),
+    with: {
+      user: {
+        with: {
+          profile: true,
+          deposits: true,
+        },
+      },
+      messages: {
+        orderBy: asc(schema.messages.sentAt),
+      },
+    },
+  });
+
+/**
+ * Gets total count of conversations
+ * @param db - Database instance
+ * @returns Total conversation count
+ */
+export const getConversationsCount = async (db: Db) => {
+  const result = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.conversations);
+  return result[0]?.count ?? 0;
+};
