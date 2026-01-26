@@ -25,6 +25,7 @@ export const useChat = (): UseChatReturn => {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
   const sessionRef = useRef<Session | null>(null);
+  const currentQuestionIdRef = useRef<string | undefined>(undefined);
 
   const connect = useCallback((session: Session) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -52,6 +53,15 @@ export const useChat = (): UseChatReturn => {
           actions: response.actions,
         };
         setMessages((prev) => [...prev, message]);
+
+        // Track current question for next user response
+        const questionnaireAction = response.actions?.find((a) => a.type === 'questionnaire');
+        if (questionnaireAction?.data?.questionId) {
+          currentQuestionIdRef.current = questionnaireAction.data.questionId as string;
+        } else if (response.actions?.some((a) => a.type === 'suggestion')) {
+          // Clear question tracking when questionnaire is complete
+          currentQuestionIdRef.current = undefined;
+        }
       } catch (err) {
         console.error('Failed to parse message:', err);
       }
@@ -96,14 +106,20 @@ export const useChat = (): UseChatReturn => {
     };
     setMessages((prev) => [...prev, userMessage]);
 
-    // Send via WebSocket
+    // Send via WebSocket with question tracking metadata
     const chatMessage: ChatMessage = {
       type: 'message',
       conversationId: sessionRef.current.conversationId,
       content,
-      metadata: { platform: 'web' },
+      metadata: {
+        platform: 'web',
+        questionId: currentQuestionIdRef.current,
+      },
     };
     wsRef.current.send(JSON.stringify(chatMessage));
+
+    // Clear current question after sending response
+    currentQuestionIdRef.current = undefined;
   }, []);
 
   // Cleanup on unmount
