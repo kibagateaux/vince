@@ -22,6 +22,9 @@ import {
   isQuestionnaireComplete,
   questionById,
   analyzeResponses,
+  createVinceRuntime,
+  type VinceRuntime,
+  type ConversationMessage,
 } from '@bangui/agent';
 import type {
   ChatMessage,
@@ -41,6 +44,8 @@ interface ClientState {
 /** Chat server configuration */
 export interface ChatServerConfig {
   db: Db;
+  /** Anthropic API key for dynamic AI responses */
+  anthropicApiKey?: string;
 }
 
 /**
@@ -49,9 +54,14 @@ export interface ChatServerConfig {
  * @returns WebSocket server instance
  */
 export const createChatServer = (config: ChatServerConfig): WebSocketServer => {
-  const { db } = config;
+  const { db, anthropicApiKey } = config;
   const wss = new WebSocketServer({ noServer: true });
   const clients = new Map<string, ClientState>();
+
+  // Create AI runtime if API key is available
+  const vinceRuntime = anthropicApiKey
+    ? createVinceRuntime({ apiKey: anthropicApiKey })
+    : null;
 
   wss.on('connection', async (ws, req) => {
     const url = new URL(req.url ?? '', 'http://localhost');
@@ -66,18 +76,45 @@ export const createChatServer = (config: ChatServerConfig): WebSocketServer => {
     const clientId = crypto.randomUUID();
     clients.set(clientId, { ws, conversationId, userId });
 
-    // Send welcome message
+    // Handle connection based on conversation state
     const conversation = await getConversation(db, conversationId);
     if (conversation?.state === 'idle') {
-      const welcome = await generateWelcome(db, userId);
+      // New conversation - send welcome message
+      const welcome = await generateWelcome(db, userId, vinceRuntime);
+      // Save welcome message to conversation history (include actions for restore)
+      await createMessage(db, {
+        conversationId,
+        sender: 'vince',
+        content: welcome.content,
+        metadata: { type: 'welcome', actions: welcome.actions },
+      });
       sendResponse(ws, conversationId, welcome.content, welcome.actions);
       await updateConversationState(db, conversationId, 'questionnaire_in_progress');
+    } else if (conversation) {
+      // Existing conversation - send conversation history
+      const messages = await getConversationMessages(db, conversationId);
+      for (const msg of messages) {
+        if (msg.sender === 'vince') {
+          // Re-send Vince's messages (actions are stored in metadata)
+          const metadata = msg.metadata as { actions?: ActionPrompt[] } | undefined;
+          const actions = metadata?.actions;
+          sendResponse(ws, conversationId, msg.content, actions);
+        } else {
+          // Send user messages as a different type so frontend can distinguish
+          ws.send(JSON.stringify({
+            type: 'history',
+            conversationId,
+            sender: 'user',
+            content: msg.content,
+          }));
+        }
+      }
     }
 
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data.toString()) as ChatMessage;
-        await handleMessage(db, ws, userId, conversationId, message);
+        await handleMessage(db, ws, userId, conversationId, message, vinceRuntime);
       } catch (err) {
         console.error('Message handling error:', err);
       }
@@ -115,19 +152,44 @@ const sendResponse = (
  */
 const generateWelcome = async (
   db: Db,
-  userId: UUID
+  userId: UUID,
+  vinceRuntime: VinceRuntime | null
 ): Promise<{ content: string; actions?: readonly ActionPrompt[] }> => {
   const responses = await getQuestionnaireResponses(db, userId);
   const answeredIds = new Set(responses.map((r) => r.questionId));
   const nextQ = getNextQuestion(answeredIds);
 
-  const welcome = `Hi! I'm Vince, and I'm here to help you discover how your values can drive meaningful impact.
+  // Use AI-generated welcome if runtime available
+  let welcome: string;
+  if (vinceRuntime && nextQ) {
+    try {
+      console.log('[AI] Generating welcome message...');
+      welcome = await vinceRuntime.generateQuestionnaireResponse(
+        [],
+        nextQ,
+        false
+      );
+      console.log('[AI] Welcome generated successfully');
+    } catch (err) {
+      console.error('[AI] Welcome generation failed, using fallback:', err);
+      welcome = `Hi! I'm Vince, and I'm here to help you discover how your values can drive meaningful impact.
+
+Before we dive in, I'd love to learn a bit about what matters to you. I have a few quick questions - there are no wrong answers, just your honest thoughts.
+
+Let's start: ${nextQ.text}`;
+    }
+  } else {
+    welcome = `Hi! I'm Vince, and I'm here to help you discover how your values can drive meaningful impact.
 
 Before we dive in, I'd love to learn a bit about what matters to you. I have a few quick questions - there are no wrong answers, just your honest thoughts.`;
+    if (nextQ) {
+      welcome += `\n\nLet's start: ${nextQ.text}`;
+    }
+  }
 
   if (nextQ) {
     return {
-      content: `${welcome}\n\nLet's start: ${nextQ.text}`,
+      content: welcome,
       actions: nextQ.options
         ? [{ type: 'questionnaire', data: { questionId: nextQ.id, options: nextQ.options } }]
         : undefined,
@@ -145,12 +207,15 @@ const handleMessage = async (
   ws: WebSocket,
   userId: UUID,
   conversationId: UUID,
-  message: ChatMessage
+  message: ChatMessage,
+  vinceRuntime: VinceRuntime | null
 ): Promise<void> => {
   const messageTimestamp = Date.now();
 
   const conversation = await getConversation(db, conversationId);
   if (!conversation) return;
+
+  console.log('[DEBUG] handleMessage: state=', conversation.state, 'content=', message.content.substring(0, 30));
 
   // Determine which question is being answered for metadata tracking
   let questionBeingAnswered: string | undefined;
@@ -176,16 +241,28 @@ const handleMessage = async (
 
   // Handle based on conversation state
   if (conversation.state === 'questionnaire_in_progress') {
-    await handleQuestionnaireResponse(db, ws, userId, conversationId, message.content, messageTimestamp);
+    await handleQuestionnaireResponse(db, ws, userId, conversationId, message.content, messageTimestamp, vinceRuntime);
   } else if (conversation.state === 'investment_suggestions') {
-    await handleInvestmentQuery(db, ws, userId, conversationId, message.content);
+    await handleInvestmentQuery(db, ws, userId, conversationId, message.content, vinceRuntime);
   } else {
-    // Default response
-    sendResponse(
-      ws,
-      conversationId,
-      "I'm here to help! Would you like to continue exploring investment opportunities?"
-    );
+    // Default response - use AI if available
+    let defaultResponse = "I'm here to help! Would you like to continue exploring investment opportunities?";
+    if (vinceRuntime) {
+      try {
+        const messages = await getConversationMessages(db, conversationId);
+        const history: ConversationMessage[] = messages.map(m => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.content,
+        }));
+        defaultResponse = await vinceRuntime.generateResponse({
+          messages: history,
+          state: conversation.state as 'idle' | 'questionnaire_in_progress' | 'questionnaire_complete' | 'investing',
+        });
+      } catch (err) {
+        console.error('AI response failed, using fallback:', err);
+      }
+    }
+    sendResponse(ws, conversationId, defaultResponse);
   }
 };
 
@@ -198,7 +275,8 @@ const handleQuestionnaireResponse = async (
   userId: UUID,
   conversationId: UUID,
   content: string,
-  messageTimestamp?: number
+  messageTimestamp: number | undefined,
+  vinceRuntime: VinceRuntime | null
 ): Promise<void> => {
   // Get current progress BEFORE saving the new response
   const existingResponses = await getQuestionnaireResponses(db, userId);
@@ -224,7 +302,9 @@ const handleQuestionnaireResponse = async (
   const nextQ = getNextQuestion(answeredIds);
 
   // If questionnaire complete, analyze and move to suggestions
+  console.log('[DEBUG] Checking completion: nextQ=', nextQ?.id, 'answeredIds=', Array.from(answeredIds));
   if (!nextQ || isQuestionnaireComplete(answeredIds)) {
+    console.log('[AI] Questionnaire complete, generating analysis...');
     // Re-fetch all responses including the one we just saved
     const allResponses = await getQuestionnaireResponses(db, userId);
 
@@ -256,13 +336,49 @@ const handleQuestionnaireResponse = async (
       .map((s, i) => `${i + 1}. **${s.title}** - ${s.description?.slice(0, 100)}...`)
       .join('\n');
 
-    const responseContent = `Thanks for sharing! Based on your responses, I'd say you're ${archetypeDesc}.
+    // Use AI for completion response if available
+    let responseContent: string;
+    if (vinceRuntime) {
+      try {
+        console.log('[AI] Generating analysis presentation...');
+        const messages = await getConversationMessages(db, conversationId);
+        const history: ConversationMessage[] = messages.map(m => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.content,
+        }));
+        responseContent = await vinceRuntime.generateAnalysisPresentation(
+          history,
+          analysis.archetypeProfile.primaryArchetype,
+          stories.map(s => ({
+            title: s.title,
+            description: s.description ?? '',
+            causeCategory: s.causeCategory,
+            minInvestment: s.minInvestment ?? '0',
+          }))
+        );
+      } catch (err) {
+        console.error('AI analysis presentation failed, using fallback:', err);
+        responseContent = `Thanks for sharing! Based on your responses, I'd say you're ${archetypeDesc}.
 
 Here are some investment opportunities that align with your values:
 
 ${storyList}
 
 Would you like to learn more about any of these, or explore other options?`;
+      }
+    } else {
+      responseContent = `Thanks for sharing! Based on your responses, I'd say you're ${archetypeDesc}.
+
+Here are some investment opportunities that align with your values:
+
+${storyList}
+
+Would you like to learn more about any of these, or explore other options?`;
+    }
+
+    const completionActions: ActionPrompt[] = [
+      { type: 'suggestion', data: { stories: stories.map((s) => s.id) } },
+    ];
 
     // Save Vince's response with analysis metadata for tracking
     await createMessage(db, {
@@ -280,22 +396,48 @@ Would you like to learn more about any of these, or explore other options?`;
           questionsAnswered: allResponses.length,
           completedAt: new Date().toISOString(),
         },
+        actions: completionActions,
       },
     });
 
-    sendResponse(ws, conversationId, responseContent, [
-      { type: 'suggestion', data: { stories: stories.map((s) => s.id) } },
-    ]);
+    sendResponse(ws, conversationId, responseContent, completionActions);
     return;
   }
 
-  // Send next question with tracking metadata
-  const responseContent = `Great, thanks for sharing that.\n\n${nextQ.text}`;
+  // Send next question with AI-enhanced response if available
+  let nextQuestionResponse: string;
+  if (vinceRuntime) {
+    try {
+      console.log('[AI] Generating questionnaire response...');
+      const messages = await getConversationMessages(db, conversationId);
+      // Messages from DB already include the just-saved user message
+      const history: ConversationMessage[] = messages.map(m => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.content,
+      }));
+      console.log('[AI] History length:', history.length);
+      nextQuestionResponse = await vinceRuntime.generateQuestionnaireResponse(
+        history,
+        nextQ,
+        true // user just answered a question
+      );
+      console.log('[AI] Questionnaire response generated successfully');
+    } catch (err) {
+      console.error('[AI] Questionnaire response failed, using fallback:', err);
+      nextQuestionResponse = `Great, thanks for sharing that.\n\n${nextQ.text}`;
+    }
+  } else {
+    nextQuestionResponse = `Great, thanks for sharing that.\n\n${nextQ.text}`;
+  }
+
+  const nextQActions: ActionPrompt[] | undefined = nextQ.options
+    ? [{ type: 'questionnaire', data: { questionId: nextQ.id, options: nextQ.options } }]
+    : undefined;
 
   await createMessage(db, {
     conversationId,
     sender: 'vince',
-    content: responseContent,
+    content: nextQuestionResponse,
     metadata: {
       questionId: nextQ.id,
       questionSection: questionById.get(nextQ.id)?.sectionId,
@@ -304,17 +446,11 @@ Would you like to learn more about any of these, or explore other options?`;
         currentQuestionIndex: answeredIds.size + 1,
         totalQuestions: 6,
       },
+      actions: nextQActions,
     },
   });
 
-  sendResponse(
-    ws,
-    conversationId,
-    responseContent,
-    nextQ.options
-      ? [{ type: 'questionnaire', data: { questionId: nextQ.id, options: nextQ.options } }]
-      : undefined
-  );
+  sendResponse(ws, conversationId, nextQuestionResponse, nextQActions);
 };
 
 /**
@@ -374,8 +510,10 @@ const handleInvestmentQuery = async (
   ws: WebSocket,
   userId: UUID,
   conversationId: UUID,
-  content: string
+  content: string,
+  vinceRuntime: VinceRuntime | null
 ): Promise<void> => {
+  console.log('[DEBUG] handleInvestmentQuery called with:', content.substring(0, 50));
   const lowerContent = content.toLowerCase();
 
   // Check if message contains deposit/invest intent
@@ -392,18 +530,25 @@ const handleInvestmentQuery = async (
 
 Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
 
-      await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
-      sendResponse(ws, conversationId, responseContent, [
+      const depositActions: ActionPrompt[] = [
         {
           type: 'deposit',
           data: {
             action: 'sign',
             amount: depositIntent.amount,
             token: depositIntent.token,
-            chain: 'ethereum', // Default to ethereum, could be made configurable
+            chain: 'ethereum',
           }
         },
-      ]);
+      ];
+
+      await createMessage(db, {
+        conversationId,
+        sender: 'vince',
+        content: responseContent,
+        metadata: { actions: depositActions },
+      });
+      sendResponse(ws, conversationId, responseContent, depositActions);
       return;
     }
 
@@ -421,13 +566,52 @@ What amount would you like to contribute?`;
     return;
   }
 
-  // Default helpful response
-  const responseContent = `I'm here to help you find the right investment opportunities. You can:
+  // Use AI for general investment queries
+  let responseContent: string;
+
+  if (vinceRuntime) {
+    try {
+      // Build conversation history
+      const dbMessages = await getConversationMessages(db, conversationId);
+      const history: ConversationMessage[] = dbMessages.map(m => ({
+        role: m.sender === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.content,
+      }));
+
+      // Fetch available stories for context
+      const stories = await getStoriesByCauseCategories(db, ['climate', 'education', 'health', 'social']);
+      const storiesContext = stories.map(s => ({
+        title: s.title,
+        description: s.description ?? '',
+        causeCategory: s.causeCategory,
+        minInvestment: String(s.minInvestment),
+      }));
+
+      responseContent = await vinceRuntime.generateResponse({
+        messages: history,
+        state: 'investing',
+        stories: storiesContext,
+      });
+      console.log('[DEBUG] AI generated investment response');
+    } catch (err) {
+      console.error('[ERROR] Failed to generate AI response for investment query:', err);
+      // Fallback to static response
+      responseContent = `I'm here to help you find the right investment opportunities. You can:
 - Ask about specific causes or initiatives
 - Learn more about impact metrics
 - Make a deposit when you're ready
 
 What would you like to explore?`;
+    }
+  } else {
+    // No AI runtime available - use static response
+    responseContent = `I'm here to help you find the right investment opportunities. You can:
+- Ask about specific causes or initiatives
+- Learn more about impact metrics
+- Make a deposit when you're ready
+
+What would you like to explore?`;
+  }
 
   await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
   sendResponse(ws, conversationId, responseContent);
