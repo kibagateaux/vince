@@ -11,13 +11,15 @@ import type { ActionPrompt } from '@bangui/types';
 interface MessageProps {
   readonly message: DisplayMessage;
   readonly onAction?: (action: ActionPrompt) => void;
+  readonly selectedOptions?: Set<string>;
+  readonly onToggleOption?: (option: string) => void;
 }
 
 /**
  * Renders a single chat message
  * @param props - Component props
  */
-export const Message: FC<MessageProps> = ({ message, onAction }) => {
+export const Message: FC<MessageProps> = ({ message, onAction, selectedOptions, onToggleOption }) => {
   const isUser = message.sender === 'user';
 
   return (
@@ -36,15 +38,22 @@ export const Message: FC<MessageProps> = ({ message, onAction }) => {
           <div className="mt-3 flex flex-wrap gap-2">
             {message.actions.map((action, i) => {
               if (action.type === 'questionnaire' && action.data.options) {
-                return (action.data.options as string[]).map((option, j) => (
-                  <button
-                    key={`${i}-${j}`}
-                    onClick={() => onAction?.(action)}
-                    className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-800 shadow-sm hover:bg-gray-50 transition-colors"
-                  >
-                    {option}
-                  </button>
-                ));
+                return (action.data.options as string[]).map((option, j) => {
+                  const isSelected = selectedOptions?.has(option) ?? false;
+                  return (
+                    <button
+                      key={`${i}-${j}`}
+                      onClick={() => onToggleOption?.(option)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition-colors ${
+                        isSelected
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-white text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  );
+                });
               }
               if (action.type === 'deposit') {
                 return (
