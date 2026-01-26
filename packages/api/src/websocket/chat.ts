@@ -200,6 +200,78 @@ Before we dive in, I'd love to learn a bit about what matters to you. I have a f
 };
 
 /**
+ * Returns appropriate fallback response when AI is unavailable
+ */
+const getFallbackResponse = (state: 'investing' | 'persuading'): string => {
+  if (state === 'persuading') {
+    return `I understand you might have some hesitation - that's completely natural when it comes to charitable giving.
+
+What makes donor-advised funds special is the flexibility: you get the tax benefit now, but you decide when and where to give later. There's no pressure to commit to specific charities right away.
+
+Would you like to learn more about how DAFs work, or perhaps explore some of the causes that other donors have found meaningful?`;
+  }
+
+  return `I'm here to help you find the right investment opportunities. You can:
+- Ask about specific causes or initiatives
+- Learn more about impact metrics
+- Make a deposit when you're ready
+
+What would you like to explore?`;
+};
+
+/**
+ * Generates an AI response using VinceRuntime, with appropriate fallbacks
+ * @param state - The conversation state: 'investing' for general queries, 'persuading' for hesitant users
+ */
+const generateAIResponse = async (
+  db: Db,
+  ws: WebSocket,
+  conversationId: UUID,
+  userMessage: string,
+  vinceRuntime: VinceRuntime | null,
+  state: 'investing' | 'persuading'
+): Promise<void> => {
+  let responseContent: string;
+
+  if (vinceRuntime) {
+    try {
+      // Build conversation history
+      const dbMessages = await getConversationMessages(db, conversationId);
+      const history: ConversationMessage[] = dbMessages.map(m => ({
+        role: m.sender === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.content,
+      }));
+
+      // Fetch available stories for context
+      const stories = await getStoriesByCauseCategories(db, ['climate', 'education', 'health', 'social']);
+      const storiesContext = stories.map(s => ({
+        title: s.title,
+        description: s.description ?? '',
+        causeCategory: s.causeCategory,
+        minInvestment: String(s.minInvestment),
+      }));
+
+      responseContent = await vinceRuntime.generateResponse({
+        messages: history,
+        state,
+        stories: storiesContext,
+      });
+      console.log(`[DEBUG] AI generated ${state} response`);
+    } catch (err) {
+      console.error(`[ERROR] Failed to generate AI ${state} response:`, err);
+      responseContent = getFallbackResponse(state);
+    }
+  } else {
+    // No AI runtime available - use fallback
+    console.log('[DEBUG] No AI runtime, using fallback response');
+    responseContent = getFallbackResponse(state);
+  }
+
+  await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
+  sendResponse(ws, conversationId, responseContent);
+};
+
+/**
  * Handles incoming chat message
  */
 const handleMessage = async (
@@ -239,7 +311,7 @@ const handleMessage = async (
     },
   });
 
-  // Handle based on conversation state
+  // Handle based on conversation state - AI determines intent intelligently
   if (conversation.state === 'questionnaire_in_progress') {
     await handleQuestionnaireResponse(db, ws, userId, conversationId, message.content, messageTimestamp, vinceRuntime);
   } else if (conversation.state === 'investment_suggestions') {
@@ -256,7 +328,7 @@ const handleMessage = async (
         }));
         defaultResponse = await vinceRuntime.generateResponse({
           messages: history,
-          state: conversation.state as 'idle' | 'questionnaire_in_progress' | 'questionnaire_complete' | 'investing',
+          state: conversation.state as 'idle' | 'questionnaire_in_progress' | 'questionnaire_complete' | 'investing' | 'persuading',
         });
       } catch (err) {
         console.error('AI response failed, using fallback:', err);
@@ -504,6 +576,7 @@ const parseDepositIntent = (
 
 /**
  * Handles investment-related queries
+ * Only parses explicit deposit amounts - AI handles all conversational responses
  */
 const handleInvestmentQuery = async (
   db: Db,
@@ -514,105 +587,40 @@ const handleInvestmentQuery = async (
   vinceRuntime: VinceRuntime | null
 ): Promise<void> => {
   console.log('[DEBUG] handleInvestmentQuery called with:', content.substring(0, 50));
-  const lowerContent = content.toLowerCase();
 
-  // Check if message contains deposit/invest intent
-  if (lowerContent.includes('deposit') || lowerContent.includes('invest') ||
-      lowerContent.includes('donate') || lowerContent.includes('give') ||
-      lowerContent.includes('contribute')) {
+  // Try to parse explicit deposit intent (e.g., "donate 10 USDC")
+  // Only triggers if user specifies both amount AND token
+  const depositIntent = parseDepositIntent(content);
 
-    // Try to parse amount and token from the message
-    const depositIntent = parseDepositIntent(content);
-
-    if (depositIntent) {
-      // User specified amount and token - prompt to confirm and sign
-      const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${depositIntent.token}.
+  if (depositIntent) {
+    // User specified amount and token - prompt to confirm and sign
+    const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${depositIntent.token}.
 
 Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
 
-      const depositActions: ActionPrompt[] = [
-        {
-          type: 'deposit',
-          data: {
-            action: 'sign',
-            amount: depositIntent.amount,
-            token: depositIntent.token,
-            chain: 'ethereum',
-          }
-        },
-      ];
+    const depositActions: ActionPrompt[] = [
+      {
+        type: 'deposit',
+        data: {
+          action: 'sign',
+          amount: depositIntent.amount,
+          token: depositIntent.token,
+          chain: 'ethereum',
+        }
+      },
+    ];
 
-      await createMessage(db, {
-        conversationId,
-        sender: 'vince',
-        content: responseContent,
-        metadata: { actions: depositActions },
-      });
-      sendResponse(ws, conversationId, responseContent, depositActions);
-      return;
-    }
-
-    // No amount specified - ask for details
-    const responseContent = `I'd be happy to help you make a deposit!
-
-Just tell me how much you'd like to donate and which token. For example:
-- "Donate 10 USDC"
-- "Invest 0.5 ETH"
-
-What amount would you like to contribute?`;
-
-    await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
-    sendResponse(ws, conversationId, responseContent);
+    await createMessage(db, {
+      conversationId,
+      sender: 'vince',
+      content: responseContent,
+      metadata: { actions: depositActions },
+    });
+    sendResponse(ws, conversationId, responseContent, depositActions);
     return;
   }
 
-  // Use AI for general investment queries
-  let responseContent: string;
-
-  if (vinceRuntime) {
-    try {
-      // Build conversation history
-      const dbMessages = await getConversationMessages(db, conversationId);
-      const history: ConversationMessage[] = dbMessages.map(m => ({
-        role: m.sender === 'user' ? 'user' as const : 'assistant' as const,
-        content: m.content,
-      }));
-
-      // Fetch available stories for context
-      const stories = await getStoriesByCauseCategories(db, ['climate', 'education', 'health', 'social']);
-      const storiesContext = stories.map(s => ({
-        title: s.title,
-        description: s.description ?? '',
-        causeCategory: s.causeCategory,
-        minInvestment: String(s.minInvestment),
-      }));
-
-      responseContent = await vinceRuntime.generateResponse({
-        messages: history,
-        state: 'investing',
-        stories: storiesContext,
-      });
-      console.log('[DEBUG] AI generated investment response');
-    } catch (err) {
-      console.error('[ERROR] Failed to generate AI response for investment query:', err);
-      // Fallback to static response
-      responseContent = `I'm here to help you find the right investment opportunities. You can:
-- Ask about specific causes or initiatives
-- Learn more about impact metrics
-- Make a deposit when you're ready
-
-What would you like to explore?`;
-    }
-  } else {
-    // No AI runtime available - use static response
-    responseContent = `I'm here to help you find the right investment opportunities. You can:
-- Ask about specific causes or initiatives
-- Learn more about impact metrics
-- Make a deposit when you're ready
-
-What would you like to explore?`;
-  }
-
-  await createMessage(db, { conversationId, sender: 'vince', content: responseContent });
-  sendResponse(ws, conversationId, responseContent);
+  // For all other messages, let AI determine intent and respond appropriately
+  // AI will intelligently handle: questions, hesitation, general conversation, etc.
+  await generateAIResponse(db, ws, conversationId, content, vinceRuntime, 'investing');
 };
