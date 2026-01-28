@@ -19,6 +19,7 @@
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "./packages/types" },
+    { "path": "./packages/protocol/lib" },
     { "path": "./packages/db" },
     { "path": "./packages/agent" },
     { "path": "./packages/api" }
