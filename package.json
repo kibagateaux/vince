@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "packages/protocol/lib"
   ],
   "scripts": {
     "build": "tsc --build && npm run build -w @bangui/app",
