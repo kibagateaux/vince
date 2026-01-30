@@ -54,6 +54,7 @@ export type Platform = (typeof Platform)[keyof typeof Platform];
 export const Sender = {
   USER: 'user',
   VINCE: 'vince',
+  KINCHO: 'kincho',
   SYSTEM: 'system',
 } as const;
 export type Sender = (typeof Sender)[keyof typeof Sender];
@@ -515,4 +516,201 @@ export interface DashboardStats {
   readonly frustratedConversations: number;
   readonly stalledConversations: number;
   readonly averageDurationMinutes: number;
+}
+
+// ============================================================================
+// Kincho Agent Types
+// ============================================================================
+
+/** Allocation request status */
+export const AllocationStatus = {
+  PENDING: 'pending',
+  PROCESSING: 'processing',
+  APPROVED: 'approved',
+  MODIFIED: 'modified',
+  REJECTED: 'rejected',
+} as const;
+export type AllocationStatus =
+  (typeof AllocationStatus)[keyof typeof AllocationStatus];
+
+/** Allocation decision type */
+export const AllocationDecision = {
+  APPROVED: 'approved',
+  MODIFIED: 'modified',
+  REJECTED: 'rejected',
+} as const;
+export type AllocationDecision =
+  (typeof AllocationDecision)[keyof typeof AllocationDecision];
+
+/** User preferences for allocation */
+export interface UserPreferences {
+  readonly causes: readonly string[];
+  readonly riskTolerance: RiskTolerance;
+  readonly archetypeProfile?: ArchetypeProfile;
+  readonly moralVector?: MoralVector;
+}
+
+/** Vince's recommendation to Kincho */
+export interface VinceRecommendation {
+  readonly suggestedAllocations: readonly SuggestedAllocation[];
+  readonly psychProfile: PsychopoliticalAnalysis | null;
+  readonly walletAnalysis?: Record<string, unknown>;
+  readonly reasoning: string;
+}
+
+/** Suggested allocation from Vince */
+export interface SuggestedAllocation {
+  readonly causeId: string;
+  readonly causeName: string;
+  readonly amount: number;
+  readonly percentage: number;
+  readonly reasoning: string;
+}
+
+/** Allocation request from Vince to Kincho */
+export interface AllocationRequest {
+  readonly id: UUID;
+  readonly depositId: UUID | null;
+  readonly userId: UUID;
+  readonly conversationId: UUID | null;
+  readonly amount: BigIntString;
+  readonly userPreferences: UserPreferences;
+  readonly vinceRecommendation: VinceRecommendation;
+  readonly status: AllocationStatus;
+  readonly createdAt: Timestamp;
+}
+
+/** Individual allocation in Kincho's decision */
+export interface AllocationItem {
+  readonly causeId: string;
+  readonly causeName: string;
+  readonly amount: number;
+  readonly allocationType: 'grant' | 'yield';
+  readonly reasoning: string;
+}
+
+/** Risk assessment by Kincho */
+export interface RiskAssessment {
+  readonly marketRisk: number;
+  readonly creditRisk: number;
+  readonly liquidityRisk: number;
+  readonly operationalRisk: number;
+  readonly aggregateRisk: number;
+  readonly complianceChecks: {
+    readonly concentrationLimit: boolean;
+    readonly sectorLimit: boolean;
+    readonly liquidityRequirement: boolean;
+  };
+}
+
+/** Meta-cognition analysis */
+export interface MetaCognition {
+  readonly confidenceScore: number;
+  readonly uncertaintySources: readonly string[];
+  readonly reasoningChain: readonly ReasoningStep[];
+  readonly humanOverrideRecommended: boolean;
+}
+
+/** Reasoning step in meta-cognition */
+export interface ReasoningStep {
+  readonly step: number;
+  readonly premise: string;
+  readonly conclusion: string;
+}
+
+/** Full Kincho analysis */
+export interface KinchoAnalysis {
+  readonly fitScore: number;
+  readonly riskAssessment: RiskAssessment;
+  readonly metaCognition: MetaCognition;
+}
+
+/** Allocation decision from Kincho */
+export interface AllocationDecisionRecord {
+  readonly id: UUID;
+  readonly requestId: UUID;
+  readonly decision: AllocationDecision;
+  readonly allocations: readonly AllocationItem[] | null;
+  readonly kinchoAnalysis: KinchoAnalysis;
+  readonly confidence: number;
+  readonly reasoning: string;
+  readonly humanOverrideRequired: boolean;
+  readonly decidedAt: Timestamp;
+}
+
+/** Kincho allocation response (sent to Vince) */
+export interface KinchoAllocationResponse {
+  readonly type: 'ALLOCATION_RESPONSE';
+  readonly requestId: UUID;
+  readonly decision: AllocationDecision;
+  readonly allocations: readonly AllocationItem[];
+  readonly modifications?: {
+    readonly original: Record<string, unknown>;
+    readonly modified: Record<string, unknown>;
+    readonly reason: string;
+  };
+  readonly kinchoAnalysis: KinchoAnalysis;
+}
+
+/** Agent conversation for Kincho-Vince communication */
+export interface AgentConversation {
+  readonly id: UUID;
+  readonly allocationRequestId: UUID;
+  readonly startedAt: Timestamp;
+  readonly lastMessageAt: Timestamp;
+}
+
+/** Agent message between Vince and Kincho */
+export interface AgentMessage {
+  readonly id: UUID;
+  readonly agentConversationId: UUID;
+  readonly sender: 'vince' | 'kincho';
+  readonly content: string;
+  readonly metadata?: Record<string, unknown>;
+  readonly sentAt: Timestamp;
+}
+
+/** Kincho configuration */
+export interface KinchoConfig {
+  readonly goals: readonly string[];
+  readonly constraints: readonly string[];
+  readonly vaultAddress: Address;
+  readonly riskParameters: {
+    readonly maxConcentration: number;
+    readonly minLiquidityReserve: number;
+    readonly maxSingleAllocation: number;
+  };
+}
+
+/** Fund state for Kincho decisions */
+export interface FundState {
+  readonly totalAum: number;
+  readonly currentAllocation: Record<string, number>;
+  readonly riskParameters: {
+    readonly currentHF: number;
+    readonly minRedeemHF: number;
+    readonly minReserveHF: number;
+  };
+  readonly liquidityAvailable: number;
+}
+
+/** Subagent consensus result */
+export interface SubagentConsensus {
+  readonly financialAnalyzer: {
+    readonly approved: boolean;
+    readonly fitScore: number;
+    readonly reasoning: string;
+  };
+  readonly riskEngine: {
+    readonly approved: boolean;
+    readonly riskAssessment: RiskAssessment;
+    readonly reasoning: string;
+  };
+  readonly metaCognition: {
+    readonly confidence: number;
+    readonly uncertaintySources: readonly string[];
+    readonly humanOverrideRecommended: boolean;
+  };
+  readonly hasConsensus: boolean;
+  readonly consensusDecision: AllocationDecision | null;
 }

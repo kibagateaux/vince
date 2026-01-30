@@ -1,8 +1,9 @@
 /**
  * @module @bangui/agent
- * Vince agent package for Bangui DAF platform
+ * Vince and Kincho agent package for Bangui DAF platform
  */
 
+// Vince exports
 export { vinceCharacter } from './character.js';
 export {
   questionnaire,
@@ -32,3 +33,25 @@ export {
   type ConversationMessage,
   type ResponseContext,
 } from './vince-runtime.js';
+
+// Kincho exports
+export { kinchoCharacter } from './kincho-character.js';
+export {
+  createKinchoRuntime,
+  type KinchoRuntime,
+  type KinchoRuntimeConfig,
+  type KinchoResponseContext,
+  type AgentConversationMessage,
+} from './kincho-runtime.js';
+export {
+  analyzeFinancials,
+  type FinancialAnalysisResult,
+} from './subagents/financial-analyzer.js';
+export {
+  assessRisk,
+  type RiskAssessmentResult,
+} from './subagents/risk-engine.js';
+export {
+  evaluateMetaCognition,
+  type MetaCognitionResult,
+} from './subagents/meta-cognition.js';
