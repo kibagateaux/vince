@@ -14,7 +14,7 @@ import {
   saveArchetypeScores,
   saveCauseAffinities,
 } from '@bangui/db';
-import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agent';
+import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agents';
 import type { QuestionnaireSubmitRequest, UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {

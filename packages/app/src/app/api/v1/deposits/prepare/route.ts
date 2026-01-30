@@ -11,7 +11,7 @@ import {
   findOrCreateWallet,
   createDeposit,
 } from '@bangui/db';
-import { buildDepositTx, simulateTx } from '@bangui/agent';
+import { buildDepositTx, simulateTx } from '@bangui/agents';
 import type {
   DepositPrepareRequest,
   DepositPrepareResponse,

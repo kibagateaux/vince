@@ -21,7 +21,7 @@ import {
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../../lib/kincho-helpers';
-import { analyzeResponses } from '@bangui/agent';
+import { analyzeResponses } from '@bangui/agents';
 import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation } from '@bangui/types';
 
 interface RelayPayload {

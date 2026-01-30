@@ -341,6 +341,43 @@ export const agentMessages = pgTable('agent_messages', {
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Memory type enum for agent learning */
+export const memoryTypeEnum = pgEnum('memory_type', [
+  'allocation_decision',
+  'user_preference',
+  'risk_assessment',
+  'negotiation_history',
+  'clarification',
+  'escalation',
+]);
+
+/**
+ * Agent memories table - Vector memory for agent learning
+ * Used for storing allocation decisions, user preferences, and negotiation patterns
+ * Note: embedding is stored via Supabase/pgvector (not in Drizzle schema)
+ */
+export const agentMemories = pgTable('agent_memories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: varchar('agent_id', { length: 50 }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: uuid('conversation_id').references(() => conversations.id, {
+    onDelete: 'set null',
+  }),
+  allocationRequestId: uuid('allocation_request_id').references(
+    () => allocationRequests.id,
+    { onDelete: 'set null' }
+  ),
+  content: text('content').notNull(),
+  // Note: embedding vector(384) is managed via raw SQL migration for pgvector
+  memoryType: memoryTypeEnum('memory_type').notNull(),
+  importance: decimal('importance').default('0.5'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+});
+
 // ============================================================================
 // Relations
 // ============================================================================
@@ -471,5 +508,20 @@ export const agentMessagesRelations = relations(agentMessages, ({ one }) => ({
   agentConversation: one(agentConversations, {
     fields: [agentMessages.agentConversationId],
     references: [agentConversations.id],
+  }),
+}));
+
+export const agentMemoriesRelations = relations(agentMemories, ({ one }) => ({
+  user: one(users, {
+    fields: [agentMemories.userId],
+    references: [users.id],
+  }),
+  conversation: one(conversations, {
+    fields: [agentMemories.conversationId],
+    references: [conversations.id],
+  }),
+  allocationRequest: one(allocationRequests, {
+    fields: [agentMemories.allocationRequestId],
+    references: [allocationRequests.id],
   }),
 }));
