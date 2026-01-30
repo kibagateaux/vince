@@ -66,7 +66,7 @@ export const depositStatusEnum = pgEnum('deposit_status', [
 ]);
 
 /** @see {@link @bangui/types#Chain} */
-export const chainEnum = pgEnum('chain', ['ethereum', 'polygon', 'arbitrum']);
+export const chainEnum = pgEnum('chain', ['ethereum', 'polygon', 'arbitrum', 'base']);
 
 /** @see {@link @bangui/types#Archetype} */
 export const archetypeEnum = pgEnum('archetype', [

@@ -8,7 +8,7 @@
 import { FC, useState, useRef, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { createWalletClient, custom, type Chain as ViemChain } from 'viem';
-import { mainnet, sepolia, polygon, arbitrum } from 'viem/chains';
+import { mainnet, sepolia, polygon, arbitrum, base } from 'viem/chains';
 import { useChat } from '../hooks/useChat';
 import { connectSession, prepareDeposit, confirmDeposit } from '../lib/api';
 import { Message } from '../components/Message';
@@ -120,14 +120,7 @@ export default function ChatPage() {
           const decimals = getTokenDecimals(token);
           const amountWei = parseAmountToWei(amount, decimals);
 
-          const { depositId, transaction } = await prepareDeposit({
-            userId: session.userId,
-            walletAddress,
-            amount: amountWei,
-            token,
-            chain: chain ?? 'ethereum',
-          });
-
+          // Detect connected chain first
           const provider = await wallet.getEthereumProvider();
           const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
           const currentChainId = parseInt(chainIdHex, 16);
@@ -137,8 +130,26 @@ export default function ChatPage() {
             11155111: sepolia,
             137: polygon,
             42161: arbitrum,
+            8453: base,
           };
           const currentChain = chainMap[currentChainId] ?? mainnet;
+
+          // Map chain ID to chain name for API
+          const chainIdToName: Record<number, Chain> = {
+            1: 'ethereum',
+            137: 'polygon',
+            42161: 'arbitrum',
+            8453: 'base',
+          };
+          const connectedChainName = chainIdToName[currentChainId] ?? 'ethereum';
+
+          const { depositId, transaction } = await prepareDeposit({
+            userId: session.userId,
+            walletAddress,
+            amount: amountWei,
+            token,
+            chain: chain ?? connectedChainName,
+          });
 
           const walletClient = createWalletClient({
             account: walletAddress,
