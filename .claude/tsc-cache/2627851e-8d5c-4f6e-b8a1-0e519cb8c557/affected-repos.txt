@@ -1,4 +1,2 @@
 packages/agents
 packages/app
-packages/types
-packages/db
