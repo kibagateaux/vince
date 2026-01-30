@@ -21,18 +21,34 @@ import {
   createVinceRuntime,
   type VinceRuntime,
   type ConversationMessage,
-} from '@bangui/agent';
+} from '@bangui/agents';
 import type { UUID, ActionPrompt, AgentResponse } from '@bangui/types';
 
 /** Lazily initialized Vince runtime */
 let vinceRuntime: VinceRuntime | null = null;
 
+/**
+ * Gets or creates the Vince runtime
+ * Prefers Anthropic over OpenRouter if API key is available
+ */
 export const getVinceRuntime = (): VinceRuntime | null => {
-  if (!vinceRuntime && process.env.OPENROUTER_API_KEY) {
-    vinceRuntime = createVinceRuntime({
-      apiKey: process.env.OPENROUTER_API_KEY,
-      model: process.env.OPENROUTER_MODEL,
-    });
+  if (!vinceRuntime) {
+    // Prefer Anthropic if available, fall back to OpenRouter
+    if (process.env.ANTHROPIC_API_KEY) {
+      console.log('[Vince] Using Anthropic provider');
+      vinceRuntime = createVinceRuntime({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-20250514',
+      });
+    } else if (process.env.OPENROUTER_API_KEY) {
+      console.log('[Vince] Using OpenRouter provider');
+      vinceRuntime = createVinceRuntime({
+        apiKey: process.env.OPENROUTER_API_KEY,
+        provider: 'openrouter',
+        model: process.env.OPENROUTER_MODEL,
+      });
+    }
   }
   return vinceRuntime;
 };

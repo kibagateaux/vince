@@ -511,3 +511,229 @@ export const getConversationsCount = async (db: Db) => {
     .from(schema.conversations);
   return result[0]?.count ?? 0;
 };
+
+// ============================================================================
+// Allocation Queries (Kincho)
+// ============================================================================
+
+/**
+ * Input for creating an allocation request
+ */
+export interface CreateAllocationRequestInput {
+  readonly depositId?: UUID;
+  readonly userId: UUID;
+  readonly conversationId?: UUID;
+  readonly amount: string;
+  readonly userPreferences: Record<string, unknown>;
+  readonly vinceRecommendation: Record<string, unknown>;
+}
+
+/**
+ * Creates an allocation request from Vince to Kincho
+ * @param db - Database instance
+ * @param input - Allocation request input
+ * @returns Created allocation request
+ */
+export const createAllocationRequest = async (
+  db: Db,
+  input: CreateAllocationRequestInput
+) => {
+  const [request] = await db
+    .insert(schema.allocationRequests)
+    .values({
+      depositId: input.depositId ?? null,
+      userId: input.userId,
+      conversationId: input.conversationId ?? null,
+      amount: input.amount,
+      userPreferences: input.userPreferences,
+      vinceRecommendation: input.vinceRecommendation,
+      status: 'pending',
+    })
+    .returning();
+  return request!;
+};
+
+/**
+ * Gets allocation request by ID
+ * @param db - Database instance
+ * @param id - Request UUID
+ */
+export const getAllocationRequest = async (db: Db, id: UUID) =>
+  db.query.allocationRequests.findFirst({
+    where: eq(schema.allocationRequests.id, id),
+    with: {
+      user: true,
+      deposit: true,
+      decision: true,
+    },
+  });
+
+/**
+ * Gets pending allocation requests for Kincho to process
+ * @param db - Database instance
+ * @param limit - Max requests to return
+ */
+export const getPendingAllocationRequests = async (db: Db, limit = 10) =>
+  db.query.allocationRequests.findMany({
+    where: eq(schema.allocationRequests.status, 'pending'),
+    orderBy: asc(schema.allocationRequests.createdAt),
+    limit,
+    with: {
+      user: true,
+      deposit: true,
+    },
+  });
+
+/**
+ * Updates allocation request status
+ * @param db - Database instance
+ * @param id - Request UUID
+ * @param status - New status
+ */
+export const updateAllocationRequestStatus = async (
+  db: Db,
+  id: UUID,
+  status: 'pending' | 'processing' | 'approved' | 'modified' | 'rejected'
+) =>
+  db
+    .update(schema.allocationRequests)
+    .set({ status })
+    .where(eq(schema.allocationRequests.id, id));
+
+/**
+ * Input for creating an allocation decision
+ */
+export interface CreateAllocationDecisionInput {
+  readonly requestId: UUID;
+  readonly decision: 'approved' | 'modified' | 'rejected';
+  readonly allocations?: Record<string, unknown>[];
+  readonly kinchoAnalysis: Record<string, unknown>;
+  readonly confidence: string;
+  readonly reasoning: string;
+  readonly humanOverrideRequired?: boolean;
+}
+
+/**
+ * Creates an allocation decision from Kincho
+ * @param db - Database instance
+ * @param input - Decision input
+ * @returns Created decision
+ */
+export const createAllocationDecision = async (
+  db: Db,
+  input: CreateAllocationDecisionInput
+) =>
+  db.transaction(async (tx) => {
+    const [decision] = await tx
+      .insert(schema.allocationDecisions)
+      .values({
+        requestId: input.requestId,
+        decision: input.decision,
+        allocations: input.allocations ?? null,
+        kinchoAnalysis: input.kinchoAnalysis,
+        confidence: input.confidence,
+        reasoning: input.reasoning,
+        humanOverrideRequired: input.humanOverrideRequired ?? false,
+      })
+      .returning();
+
+    // Update request status to match decision
+    await tx
+      .update(schema.allocationRequests)
+      .set({ status: input.decision })
+      .where(eq(schema.allocationRequests.id, input.requestId));
+
+    return decision!;
+  });
+
+/**
+ * Gets allocation decision by request ID
+ * @param db - Database instance
+ * @param requestId - Request UUID
+ */
+export const getAllocationDecision = async (db: Db, requestId: UUID) =>
+  db.query.allocationDecisions.findFirst({
+    where: eq(schema.allocationDecisions.requestId, requestId),
+  });
+
+// ============================================================================
+// Agent Conversation Queries (Kincho-Vince Communication)
+// ============================================================================
+
+/**
+ * Creates an agent conversation for Kincho-Vince communication
+ * @param db - Database instance
+ * @param allocationRequestId - Associated allocation request
+ */
+export const createAgentConversation = async (
+  db: Db,
+  allocationRequestId: UUID
+) => {
+  const [conversation] = await db
+    .insert(schema.agentConversations)
+    .values({ allocationRequestId })
+    .returning();
+  return conversation!;
+};
+
+/**
+ * Gets agent conversation by allocation request ID
+ * @param db - Database instance
+ * @param allocationRequestId - Allocation request UUID
+ */
+export const getAgentConversationByRequest = async (
+  db: Db,
+  allocationRequestId: UUID
+) =>
+  db.query.agentConversations.findFirst({
+    where: eq(schema.agentConversations.allocationRequestId, allocationRequestId),
+    with: {
+      messages: {
+        orderBy: asc(schema.agentMessages.sentAt),
+      },
+    },
+  });
+
+/**
+ * Input for creating an agent message
+ */
+export interface CreateAgentMessageInput {
+  readonly agentConversationId: UUID;
+  readonly sender: 'vince' | 'kincho';
+  readonly content: string;
+  readonly metadata?: Record<string, unknown>;
+}
+
+/**
+ * Creates a message in an agent conversation
+ * @param db - Database instance
+ * @param input - Message input
+ */
+export const createAgentMessage = async (
+  db: Db,
+  input: CreateAgentMessageInput
+) =>
+  db.transaction(async (tx) => {
+    const [message] = await tx
+      .insert(schema.agentMessages)
+      .values(input)
+      .returning();
+
+    await tx
+      .update(schema.agentConversations)
+      .set({ lastMessageAt: sql`NOW()` })
+      .where(eq(schema.agentConversations.id, input.agentConversationId));
+
+    return message!;
+  });
+
+/**
+ * Gets all messages in an agent conversation
+ * @param db - Database instance
+ * @param agentConversationId - Agent conversation UUID
+ */
+export const getAgentMessages = async (db: Db, agentConversationId: UUID) =>
+  db.query.agentMessages.findMany({
+    where: eq(schema.agentMessages.agentConversationId, agentConversationId),
+    orderBy: asc(schema.agentMessages.sentAt),
+  });

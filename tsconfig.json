@@ -20,7 +20,6 @@
   "references": [
     { "path": "./packages/types" },
     { "path": "./packages/db" },
-    { "path": "./packages/agent" },
-    { "path": "./packages/api" }
+    { "path": "./packages/agents" }
   ]
 }

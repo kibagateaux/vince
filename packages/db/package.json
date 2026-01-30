@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@bangui/types": "*",
+    "@supabase/supabase-js": "^2.93.3",
     "drizzle-orm": "^0.38.0",
     "postgres": "^3.4.0"
   },
