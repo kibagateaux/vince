@@ -33,7 +33,23 @@ export const userStatusEnum = pgEnum('user_status', [
 export const platformEnum = pgEnum('platform', ['web', 'telegram', 'discord']);
 
 /** @see {@link @bangui/types#Sender} */
-export const senderEnum = pgEnum('sender', ['user', 'vince', 'system']);
+export const senderEnum = pgEnum('sender', ['user', 'vince', 'kincho', 'system']);
+
+/** Allocation request status */
+export const allocationStatusEnum = pgEnum('allocation_status', [
+  'pending',
+  'processing',
+  'approved',
+  'modified',
+  'rejected',
+]);
+
+/** Allocation decision type */
+export const allocationDecisionEnum = pgEnum('allocation_decision', [
+  'approved',
+  'modified',
+  'rejected',
+]);
 
 /** @see {@link @bangui/types#RiskTolerance} */
 export const riskToleranceEnum = pgEnum('risk_tolerance', [
@@ -250,6 +266,81 @@ export const stories = pgTable('stories', {
   active: boolean('active').notNull().default(true),
 });
 
+/**
+ * Allocation requests table - Vince → Kincho allocation requests
+ * @see {@link @bangui/types#AllocationRequest}
+ */
+export const allocationRequests = pgTable('allocation_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  depositId: uuid('deposit_id').references(() => deposits.id),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  conversationId: uuid('conversation_id').references(() => conversations.id),
+  amount: decimal('amount').notNull(),
+  userPreferences: jsonb('user_preferences').notNull(),
+  vinceRecommendation: jsonb('vince_recommendation').notNull(),
+  status: allocationStatusEnum('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Allocation decisions table - Kincho responses to allocation requests
+ * @see {@link @bangui/types#AllocationDecision}
+ */
+export const allocationDecisions = pgTable('allocation_decisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  requestId: uuid('request_id')
+    .notNull()
+    .references(() => allocationRequests.id, { onDelete: 'cascade' })
+    .unique(),
+  decision: allocationDecisionEnum('decision').notNull(),
+  allocations: jsonb('allocations'),
+  kinchoAnalysis: jsonb('kincho_analysis').notNull(),
+  confidence: decimal('confidence').notNull(),
+  reasoning: text('reasoning').notNull(),
+  humanOverrideRequired: boolean('human_override_required')
+    .notNull()
+    .default(false),
+  decidedAt: timestamp('decided_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Agent conversations table - Kincho-Vince conversation tracking
+ * Separate from user conversations to isolate agent communication
+ */
+export const agentConversations = pgTable('agent_conversations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  allocationRequestId: uuid('allocation_request_id')
+    .notNull()
+    .references(() => allocationRequests.id, { onDelete: 'cascade' }),
+  startedAt: timestamp('started_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastMessageAt: timestamp('last_message_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Agent messages table - Messages between Vince and Kincho
+ * Kincho has NO access to user messages, only agent messages
+ */
+export const agentMessages = pgTable('agent_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentConversationId: uuid('agent_conversation_id')
+    .notNull()
+    .references(() => agentConversations.id, { onDelete: 'cascade' }),
+  sender: senderEnum('sender').notNull(), // 'vince' or 'kincho'
+  content: text('content').notNull(),
+  metadata: jsonb('metadata'),
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ============================================================================
 // Relations
 // ============================================================================
@@ -329,5 +420,56 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   conversation: one(conversations, {
     fields: [messages.conversationId],
     references: [conversations.id],
+  }),
+}));
+
+export const allocationRequestsRelations = relations(
+  allocationRequests,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [allocationRequests.userId],
+      references: [users.id],
+    }),
+    deposit: one(deposits, {
+      fields: [allocationRequests.depositId],
+      references: [deposits.id],
+    }),
+    conversation: one(conversations, {
+      fields: [allocationRequests.conversationId],
+      references: [conversations.id],
+    }),
+    decision: one(allocationDecisions, {
+      fields: [allocationRequests.id],
+      references: [allocationDecisions.requestId],
+    }),
+    agentConversations: many(agentConversations),
+  })
+);
+
+export const allocationDecisionsRelations = relations(
+  allocationDecisions,
+  ({ one }) => ({
+    request: one(allocationRequests, {
+      fields: [allocationDecisions.requestId],
+      references: [allocationRequests.id],
+    }),
+  })
+);
+
+export const agentConversationsRelations = relations(
+  agentConversations,
+  ({ one, many }) => ({
+    allocationRequest: one(allocationRequests, {
+      fields: [agentConversations.allocationRequestId],
+      references: [allocationRequests.id],
+    }),
+    messages: many(agentMessages),
+  })
+);
+
+export const agentMessagesRelations = relations(agentMessages, ({ one }) => ({
+  agentConversation: one(agentConversations, {
+    fields: [agentMessages.agentConversationId],
+    references: [agentConversations.id],
   }),
 }));
