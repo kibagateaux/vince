@@ -10,12 +10,10 @@
   "scripts": {
     "build": "tsc --build && npm run build -w @bangui/app",
     "clean": "tsc --build --clean && rm -rf packages/*/dist",
-    "dev": "concurrently -n api,agent,app -c blue,green,magenta \"npm run dev -w @bangui/api\" \"npm run dev -w @bangui/agent\" \"npm run dev -w @bangui/app\"",
-    "start": "concurrently -n api,agent,app -c blue,green,magenta \"npm run start -w @bangui/api\" \"npm run start -w @bangui/agent\" \"npm run start -w @bangui/app\"",
+    "dev": "concurrently -n agent,app -c green,magenta \"npm run dev -w @bangui/agent\" \"npm run dev -w @bangui/app\"",
+    "start": "concurrently -n agent,app -c green,magenta \"npm run start -w @bangui/agent\" \"npm run start -w @bangui/app\"",
     "test": "npm run test --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "db:migrate": "npm run migrate -w @bangui/db",
-    "db:seed": "npm run seed -w @bangui/db"
+    "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

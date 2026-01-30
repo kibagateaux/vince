@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@bangui/types": "*",
-    "@bangui/db": "*",
     "@elizaos/core": "^1.6.0",
     "openai": "^4.73.0"
   },
