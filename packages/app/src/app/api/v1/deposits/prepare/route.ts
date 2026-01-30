@@ -6,11 +6,11 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   findOrCreateWallet,
   createDeposit,
-} from '@bangui/db';
+} from '../../../../../lib/db';
 import { buildDepositTx, simulateTx } from '@bangui/agent';
 import type {
   DepositPrepareRequest,
@@ -20,19 +20,19 @@ import type {
 } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const body: DepositPrepareRequest & { walletAddress: Address } = await request.json();
   const { userId, amount, token, chain, walletAddress } = body;
 
   const contractAddress = (process.env.DAF_CONTRACT_ADDRESS ?? '0x0000000000000000000000000000000000000000') as Address;
 
   // Get or create wallet
-  const wallet = await findOrCreateWallet(db, userId, walletAddress, chain);
+  const wallet = await findOrCreateWallet(db, userId as string, walletAddress, chain);
 
   // Create pending deposit record
   const deposit = await createDeposit(db, {
-    userId,
-    walletId: wallet.id as UUID,
+    userId: userId as string,
+    walletId: wallet.id,
     amount,
     token,
   });

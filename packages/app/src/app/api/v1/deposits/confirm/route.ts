@@ -7,27 +7,28 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   updateDepositStatus,
   getDeposit,
   findOrCreateConversation,
-} from '@bangui/db';
+  createMessage,
+  getUserProfile,
+} from '../../../../../lib/db';
 import {
   submitAllocationRequest,
   processAllocationRequest,
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../lib/kincho-helpers';
-import { createMessage, getUserProfile } from '@bangui/db';
 import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const { depositId, txHash, conversationId } = await request.json() as {
-    depositId: UUID;
+    depositId: string;
     txHash: string;
-    conversationId?: UUID;
+    conversationId?: string;
   };
 
   // Update deposit status
@@ -51,10 +52,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Build user preferences from profile
-  const profile = await getUserProfile(db, deposit.userId as UUID);
+  const profile = await getUserProfile(db, deposit.user_id);
   const userPreferences: UserPreferences = {
-    causes: profile?.causeAffinities?.map((a) => a.causeCategory) ?? ['general'],
-    riskTolerance: profile?.riskTolerance ?? 'moderate',
+    causes: profile?.causeAffinities?.map((a) => a.cause_category) ?? ['general'],
+    riskTolerance: profile?.risk_tolerance ?? 'moderate',
     archetypeProfile: profile?.archetypeScores?.[0]
       ? {
           primaryArchetype: profile.archetypeScores[0].archetype,
@@ -62,8 +63,8 @@ export async function POST(request: NextRequest) {
           confidence: Number(profile.archetypeScores[0].confidence ?? 0.7),
           causeAlignment: Object.fromEntries(
             (profile.causeAffinities ?? []).map((a) => [
-              a.causeCategory,
-              Number(a.affinityScore),
+              a.cause_category,
+              Number(a.affinity_score),
             ])
           ),
         }
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
   const depositAmount = Number(deposit.amount);
   const suggestedAllocations: SuggestedAllocation[] = [];
   const topCauses = (profile?.causeAffinities ?? [])
-    .sort((a, b) => Number(b.affinityScore) - Number(a.affinityScore))
+    .sort((a, b) => Number(b.affinity_score) - Number(a.affinity_score))
     .slice(0, 3);
 
   if (topCauses.length > 0) {
@@ -83,11 +84,11 @@ export async function POST(request: NextRequest) {
 
     for (const cause of topCauses) {
       suggestedAllocations.push({
-        causeId: `cause-${cause.causeCategory}-001`,
-        causeName: cause.causeCategory.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+        causeId: `cause-${cause.cause_category}-001`,
+        causeName: cause.cause_category.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
         amount: perCause,
         percentage: (perCause / depositAmount) * 100,
-        reasoning: `Aligned with user's ${cause.causeCategory} affinity`,
+        reasoning: `Aligned with user's ${cause.cause_category} affinity`,
       });
     }
     suggestedAllocations.push({
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
     // Submit to Kincho
     const allocationRequest = await submitAllocationRequest(db, {
       depositId: depositId,
-      userId: deposit.userId as UUID,
+      userId: deposit.user_id,
       conversationId: conversationId,
       amount: deposit.amount,
       userPreferences,

@@ -4,7 +4,7 @@
  * Kincho has NO access to user messages
  */
 
-import type { Db } from '@bangui/db';
+import type { Db } from './db';
 import {
   createAllocationRequest,
   getAllocationRequest,
@@ -14,7 +14,8 @@ import {
   createAgentMessage,
   getAgentConversationByRequest,
   getAgentMessages,
-} from '@bangui/db';
+  type AllocationStatus,
+} from './db';
 import {
   createKinchoRuntime,
   type KinchoRuntime,
@@ -79,9 +80,9 @@ export const getFundState = async (): Promise<FundState> => {
 export const submitAllocationRequest = async (
   db: Db,
   params: {
-    depositId?: UUID;
-    userId: UUID;
-    conversationId?: UUID;
+    depositId?: string;
+    userId: string;
+    conversationId?: string;
     amount: string;
     userPreferences: UserPreferences;
     vinceRecommendation: VinceRecommendation;
@@ -98,18 +99,18 @@ export const submitAllocationRequest = async (
   });
 
   // Create agent conversation for Kincho-Vince communication
-  await createAgentConversation(db, request.id as UUID);
+  await createAgentConversation(db, request.id);
 
   return {
     id: request.id as UUID,
-    depositId: request.depositId as UUID | null,
-    userId: request.userId as UUID,
-    conversationId: request.conversationId as UUID | null,
+    depositId: request.deposit_id as UUID | null,
+    userId: request.user_id as UUID,
+    conversationId: request.conversation_id as UUID | null,
     amount: request.amount as string & { readonly __brand: 'BigIntString' },
     userPreferences: params.userPreferences,
     vinceRecommendation: params.vinceRecommendation,
     status: 'pending',
-    createdAt: request.createdAt.getTime() as number & { readonly __brand: 'Timestamp' },
+    createdAt: new Date(request.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
 };
 
@@ -119,7 +120,7 @@ export const submitAllocationRequest = async (
  */
 export const processAllocationRequest = async (
   db: Db,
-  requestId: UUID
+  requestId: string
 ): Promise<KinchoAllocationResponse | null> => {
   const runtime = getKinchoRuntime();
   if (!runtime) {
@@ -135,7 +136,7 @@ export const processAllocationRequest = async (
   }
 
   // Update status to processing
-  await updateAllocationRequestStatus(db, requestId, 'processing');
+  await updateAllocationRequestStatus(db, requestId, 'processing' as AllocationStatus);
 
   // Get agent conversation
   const agentConversation = await getAgentConversationByRequest(db, requestId);
@@ -147,21 +148,21 @@ export const processAllocationRequest = async (
   // Build allocation request object
   const request: AllocationRequest = {
     id: requestRecord.id as UUID,
-    depositId: requestRecord.depositId as UUID | null,
-    userId: requestRecord.userId as UUID,
-    conversationId: requestRecord.conversationId as UUID | null,
+    depositId: requestRecord.deposit_id as UUID | null,
+    userId: requestRecord.user_id as UUID,
+    conversationId: requestRecord.conversation_id as UUID | null,
     amount: requestRecord.amount as string & { readonly __brand: 'BigIntString' },
-    userPreferences: requestRecord.userPreferences as unknown as UserPreferences,
-    vinceRecommendation: requestRecord.vinceRecommendation as unknown as VinceRecommendation,
+    userPreferences: requestRecord.user_preferences as unknown as UserPreferences,
+    vinceRecommendation: requestRecord.vince_recommendation as unknown as VinceRecommendation,
     status: 'processing',
-    createdAt: requestRecord.createdAt.getTime() as number & { readonly __brand: 'Timestamp' },
+    createdAt: new Date(requestRecord.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
 
   // Get fund state
   const fundState = await getFundState();
 
   // Get existing agent messages (Kincho only sees agent messages, NOT user messages)
-  const existingMessages = await getAgentMessages(db, agentConversation.id as UUID);
+  const existingMessages = await getAgentMessages(db, agentConversation.id);
   const agentHistory: AgentConversationMessage[] = existingMessages.map((m) => ({
     role: m.sender as 'vince' | 'kincho',
     content: m.content,
@@ -169,7 +170,7 @@ export const processAllocationRequest = async (
 
   // Send Vince's request as an agent message
   await createAgentMessage(db, {
-    agentConversationId: agentConversation.id as UUID,
+    agentConversationId: agentConversation.id,
     sender: 'vince',
     content: JSON.stringify({
       type: 'ALLOCATION_REQUEST',
@@ -213,7 +214,7 @@ export const processAllocationRequest = async (
 
   // Save Kincho's response as an agent message
   await createAgentMessage(db, {
-    agentConversationId: agentConversation.id as UUID,
+    agentConversationId: agentConversation.id,
     sender: 'kincho',
     content: JSON.stringify(decision),
     metadata: { type: 'allocation_response', decision: decision.decision },
@@ -233,7 +234,7 @@ export const processAllocationRequest = async (
   });
 
   // Update request status based on decision
-  await updateAllocationRequestStatus(db, requestId, decision.decision);
+  await updateAllocationRequestStatus(db, requestId, decision.decision as AllocationStatus);
 
   return decision;
 };

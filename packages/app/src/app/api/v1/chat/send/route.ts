@@ -6,11 +6,11 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   getConversation,
   getConversationMessages,
-} from '@bangui/db';
+} from '../../../../../lib/db';
 import {
   getVinceRuntime,
   processMessage,
@@ -19,7 +19,7 @@ import {
 import type { UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const { conversationId, userId, content, metadata } = await request.json() as {
     conversationId: UUID;
     userId: UUID;

@@ -6,11 +6,11 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../../lib/db';
 import {
+  getSupabase,
   getConversation,
   getConversationMessages,
-} from '@bangui/db';
+} from '../../../../../../lib/db';
 import { formatMessagesForClient } from '../../../../../../lib/chat-helpers';
 import type { UUID } from '@bangui/types';
 
@@ -18,7 +18,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ conversationId: string }> }
 ) {
-  const db = getDb();
+  const db = getSupabase();
   const { conversationId } = await params;
   const lastMessageId = request.nextUrl.searchParams.get('lastMessageId');
 

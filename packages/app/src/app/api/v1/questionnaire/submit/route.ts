@@ -6,26 +6,26 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   saveQuestionnaireResponse,
   getQuestionnaireResponses,
   getUserProfile,
   saveArchetypeScores,
   saveCauseAffinities,
-} from '@bangui/db';
+} from '../../../../../lib/db';
 import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agent';
 import type { QuestionnaireSubmitRequest, UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const body: QuestionnaireSubmitRequest = await request.json();
   const { userId, responses } = body;
 
   // Save each response
   for (const response of responses) {
     await saveQuestionnaireResponse(db, {
-      userId,
+      userId: userId as string,
       questionId: response.questionId,
       response: response.response,
       responseTimeMs: response.responseTimeMs,
@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Check if questionnaire is complete
-  const allResponses = await getQuestionnaireResponses(db, userId);
-  const answeredIds = new Set(allResponses.map((r) => r.questionId));
+  const allResponses = await getQuestionnaireResponses(db, userId as string);
+  const answeredIds = new Set(allResponses.map((r) => r.question_id));
   const complete = isQuestionnaireComplete(answeredIds);
 
   if (complete) {
@@ -42,16 +42,16 @@ export async function POST(request: NextRequest) {
     const analysis = analyzeResponses(
       userId,
       allResponses.map((r) => ({
-        questionId: r.questionId,
+        questionId: r.question_id,
         response: r.response,
       }))
     );
 
     // Save results
-    const profile = await getUserProfile(db, userId);
+    const profile = await getUserProfile(db, userId as string);
     if (profile) {
       await saveArchetypeScores(db, {
-        profileId: profile.id as UUID,
+        profileId: profile.id,
         scores: [
           {
             archetype: analysis.archetypeProfile.primaryArchetype,
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       });
 
       await saveCauseAffinities(db, {
-        profileId: profile.id as UUID,
+        profileId: profile.id,
         affinities: analysis.causeAffinities.slice(0, 5).map((a) => ({
           causeCategory: a.causeId,
           affinityScore: a.affinityScore,
