@@ -7,7 +7,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../../lib/db';
+import { getSupabase } from '../../../../../../lib/db';
 import {
   submitAllocationRequest,
   processAllocationRequest,
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const db = getDb();
+  const db = getSupabase();
   const payload = (await request.json()) as AllocationRequestPayload;
 
   // Validate required fields

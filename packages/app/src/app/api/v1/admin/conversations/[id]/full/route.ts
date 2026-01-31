@@ -10,16 +10,27 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../../../lib/db';
 import {
+  getSupabase,
   getConversationWithMessages,
   getAgentConversationByRequest,
   getAgentMessages,
   getAllocationRequest,
   getAllocationDecision,
-  getMemoriesByAllocationRequest,
-} from '@bangui/db';
+} from '../../../../../../../lib/db';
 import type { UUID } from '@bangui/types';
+
+// Stub for getMemoriesByAllocationRequest until vector memory is implemented
+const getMemoriesByAllocationRequest = async (_requestId: string): Promise<Array<{
+  id: string;
+  agentId: string;
+  memoryType: string;
+  content: string;
+  importance: number;
+  createdAt: Date;
+}>> => {
+  return [];
+};
 
 interface FullConversationResponse {
   /** User conversation - what the user sees */
@@ -91,7 +102,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<FullConversationResponse | { error: string }>> {
-  const db = getDb();
+  const db = getSupabase();
   const { id: conversationId } = await params;
 
   // Get user conversation with messages
@@ -104,12 +115,12 @@ export async function GET(
     userConversation: {
       id: conversation.id,
       state: conversation.state,
-      startedAt: new Date(conversation.startedAt).toISOString(),
-      messages: (conversation.messages ?? []).map((m) => ({
+      startedAt: new Date(conversation.started_at).toISOString(),
+      messages: ((conversation.messages ?? []) as Array<{ id: string; sender: string; content: string; sent_at: string; metadata?: unknown }>).map((m) => ({
         id: m.id,
         sender: m.sender,
         content: m.content,
-        sentAt: new Date(m.sentAt).toISOString(),
+        sentAt: new Date(m.sent_at).toISOString(),
         metadata: m.metadata,
       })),
     },
@@ -147,11 +158,11 @@ export async function GET(
             decision: decision.decision,
             confidence: String(decision.confidence),
             reasoning: decision.reasoning,
-            humanOverrideRequired: decision.humanOverrideRequired,
-            decidedAt: new Date(decision.decidedAt).toISOString(),
+            humanOverrideRequired: decision.human_override_required,
+            decidedAt: new Date(decision.decided_at).toISOString(),
           }
         : undefined,
-      kinchoAnalysis: decision?.kinchoAnalysis,
+      kinchoAnalysis: decision?.kincho_analysis,
     };
 
     if (decision) {
@@ -169,8 +180,8 @@ export async function GET(
       const agentMessages = await getAgentMessages(db, agentConversation.id as UUID);
       response.agentConversation = {
         id: agentConversation.id,
-        allocationRequestId: agentConversation.allocationRequestId,
-        startedAt: new Date(agentConversation.startedAt).toISOString(),
+        allocationRequestId: agentConversation.allocation_request_id,
+        startedAt: new Date(agentConversation.started_at).toISOString(),
         messages: agentMessages.map((m) => {
           let parsed: unknown = undefined;
           try {
@@ -183,7 +194,7 @@ export async function GET(
             id: m.id,
             sender: m.sender as 'vince' | 'kincho',
             content: m.content,
-            sentAt: new Date(m.sentAt).toISOString(),
+            sentAt: new Date(m.sent_at).toISOString(),
             metadata: m.metadata,
             parsed,
           };

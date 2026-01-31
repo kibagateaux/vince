@@ -6,13 +6,16 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
-import { getAllConversations } from '@bangui/db';
+import {
+  getSupabase,
+  getAllConversations,
+  type ConversationState,
+} from '../../../../../lib/db';
 import { computeConversationHealth } from '../../../../../lib/admin-helpers';
-import type { DashboardStats, ConversationState } from '@bangui/types';
+import type { DashboardStats } from '@bangui/types';
 
 export async function GET() {
-  const db = getDb();
+  const db = getSupabase();
 
   const conversations = await getAllConversations(db);
   const total = conversations.length;
@@ -24,13 +27,17 @@ export async function GET() {
   let totalDuration = 0;
 
   for (const conv of conversations) {
-    const messages = conv.messages ?? [];
+    const messages = (conv.messages ?? []) as Array<{
+      sender: string;
+      content: string;
+      sent_at: string;
+    }>;
     const health = computeConversationHealth(
       conv.state as ConversationState,
       messages.map((m) => ({
         sender: m.sender,
         content: m.content,
-        sentAt: m.sentAt,
+        sentAt: new Date(m.sent_at),
       })),
       false
     );
@@ -50,8 +57,8 @@ export async function GET() {
         break;
     }
 
-    const startTime = new Date(conv.startedAt).getTime();
-    const lastTime = new Date(conv.lastMessageAt).getTime();
+    const startTime = new Date(conv.started_at).getTime();
+    const lastTime = new Date(conv.last_message_at).getTime();
     totalDuration += (lastTime - startTime) / 60000;
   }
 

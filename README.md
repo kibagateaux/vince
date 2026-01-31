@@ -7,17 +7,15 @@ A DAF (Donor Advised Fund) platform featuring an AI-powered conversational agent
 ```
 packages/
 ├── types/     # Shared TypeScript type definitions
-├── db/        # PostgreSQL database with Drizzle ORM
-├── agent/     # ElizaOS-based AI agent (Vince)
-├── api/       # Hono API server with WebSocket support
-└── web/       # React frontend with Privy auth & Wagmi
+├── agent/     # ElizaOS-based AI agent (Vince & Kincho)
+└── app/       # Next.js app with API routes, Privy auth & Wagmi
 ```
 
 ## Prerequisites
 
 - Node.js >= 20.0.0
-- PostgreSQL 15+
 - npm 9+
+- Supabase account (for database)
 
 ## Getting Started
 
@@ -38,15 +36,9 @@ cp .env.example .env
 Edit `.env` with your values:
 
 ```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/bangui
-
-# API Server
-PORT=3001
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-
-# DAF Contract
-DAF_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # OpenRouter (for AI agent - supports multiple providers)
 OPENROUTER_API_KEY=sk-or-...
@@ -54,7 +46,10 @@ OPENROUTER_API_KEY=sk-or-...
 # OPENROUTER_MODEL=anthropic/claude-sonnet-4
 
 # Privy (Web UI authentication)
-VITE_PRIVY_APP_ID=your-privy-app-id
+NEXT_PUBLIC_PRIVY_APP_ID=your-privy-app-id
+
+# DAF Contract
+DAF_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 
 # Optional: Blockchain RPCs
 ETH_RPC_URL=https://mainnet.infura.io/v3/...
@@ -62,27 +57,7 @@ POLYGON_RPC_URL=https://polygon-mainnet.infura.io/v3/...
 ARB_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/...
 ```
 
-### 3. Database Setup
-
-Create the PostgreSQL database:
-
-```bash
-createdb bangui
-```
-
-Run migrations:
-
-```bash
-npm run db:migrate
-```
-
-Seed the database (optional):
-
-```bash
-npm run db:seed
-```
-
-### 4. Build Packages
+### 3. Build Packages
 
 Build all shared packages before running the app:
 
@@ -90,38 +65,29 @@ Build all shared packages before running the app:
 npm run build
 ```
 
-This compiles TypeScript for `@bangui/types`, `@bangui/db`, and `@bangui/agent`.
+This compiles TypeScript for `@bangui/types` and `@bangui/agent`.
 
-### 5. Run the Application
+### 4. Run the Application
 
-Start the API server:
-
-```bash
-npm run dev -w @bangui/api
-```
-
-In a separate terminal, start the web frontend:
+Start all services in development mode:
 
 ```bash
-npm run dev -w @bangui/web
-```
-
-The API will be available at `http://localhost:3001` and the web app at `http://localhost:5173`.
-
-## Development
-
-### Running Individual Packages
-
-```bash
-# API server (with hot reload)
-npm run dev -w @bangui/api
-
-# Web frontend (Vite dev server)
-npm run dev -w @bangui/web
-
-# Run all dev servers
 npm run dev
 ```
+
+Or run individually:
+
+```bash
+# Next.js app (with hot reload)
+npm run dev -w @bangui/app
+
+# Agent service
+npm run dev -w @bangui/agent
+```
+
+The app will be available at `http://localhost:3000`.
+
+## Development
 
 ### Building
 
@@ -131,10 +97,8 @@ npm run build
 
 # Build specific package
 npm run build -w @bangui/types
-npm run build -w @bangui/db
 npm run build -w @bangui/agent
-npm run build -w @bangui/api
-npm run build -w @bangui/web
+npm run build -w @bangui/app
 ```
 
 ### Testing
@@ -142,46 +106,28 @@ npm run build -w @bangui/web
 ```bash
 # Run all tests
 npm run test
-
-# Run tests for specific package
-npm run test -w @bangui/db
-npm run test -w @bangui/api
-
-# Watch mode
-npm run test:watch -w @bangui/db
-```
-
-### Database Operations
-
-```bash
-# Run migrations
-npm run db:migrate
-
-# Generate new migration (after schema changes)
-npm run generate -w @bangui/db
-
-# Seed database
-npm run db:seed
 ```
 
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /health` | Health check |
+| `GET /api/health` | Health check |
 | `POST /api/v1/auth/connect` | Connect/authenticate user |
-| `GET /api/v1/questionnaire` | Get questionnaire questions |
+| `POST /api/v1/chat/connect` | Initialize chat session |
+| `POST /api/v1/chat/send` | Send message to Vince |
 | `POST /api/v1/questionnaire/submit` | Submit questionnaire responses |
 | `POST /api/v1/deposits/prepare` | Prepare a deposit transaction |
 | `POST /api/v1/deposits/confirm` | Confirm a deposit |
-| `GET /api/v1/stories` | Get investment stories |
+| `GET /api/v1/stories/recommended/[userId]` | Get recommended stories |
 | `GET /api/v1/admin/conversations` | Admin: list conversations |
-| `WS /ws/chat` | WebSocket for real-time chat with Vince |
+| `POST /api/v1/agents/kincho/message` | Kincho agent endpoint |
+| `POST /api/v1/agents/vince-kincho/relay` | Vince-Kincho relay endpoint |
 
 ## Architecture
 
-- **Frontend**: React 18 + Vite + TailwindCSS + Privy for wallet auth
-- **Backend**: Hono (Node.js) + WebSocket for real-time chat
-- **Database**: PostgreSQL + Drizzle ORM
+- **Frontend**: Next.js 14 + React 18 + TailwindCSS + Privy for wallet auth
+- **Backend**: Next.js API routes (serverless on Vercel)
+- **Database**: Supabase (PostgreSQL)
 - **AI Agent**: ElizaOS + OpenRouter for conversational AI (supports multiple providers)
 - **Blockchain**: Wagmi + Viem for Ethereum/Polygon/Arbitrum support

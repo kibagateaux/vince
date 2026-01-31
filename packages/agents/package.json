@@ -31,9 +31,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
-    "@bangui/db": "*",
     "@bangui/types": "*",
     "@elizaos/core": "^1.6.0",
+    "@supabase/supabase-js": "^2.93.3",
     "@types/uuid": "^10.0.0",
     "openai": "^4.73.0",
     "uuid": "^13.0.0"

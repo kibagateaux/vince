@@ -6,17 +6,17 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   findUserByWalletAddress,
   createUser,
   findOrCreateConversation,
   findOrCreateWallet,
-} from '@bangui/db';
+} from '../../../../../lib/db';
 import type { AuthConnectRequest, AuthConnectResponse, UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const body: AuthConnectRequest = await request.json();
   const { platform, walletAddress } = body;
 

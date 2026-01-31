@@ -4,7 +4,7 @@
  */
 
 import type { AllocationRequest, FundState } from '@bangui/types';
-import { storeMemory } from '@bangui/db';
+import { storeMemory } from '../../shared/db/index.js';
 import { runNegotiationRound } from './negotiation-round.js';
 import { mergeModifications, resolveVoting, checkConvergence } from './voting.js';
 import type {

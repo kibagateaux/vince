@@ -4,7 +4,7 @@
  * Uses Supabase Edge Functions with gte-small (free, 384 dimensions)
  */
 
-import { getSupabaseServiceClient } from '@bangui/db';
+import { getSupabaseServiceClient } from '../db/index.js';
 
 /** Embedding dimensions for gte-small model */
 export const EMBEDDING_DIMENSIONS = 384;

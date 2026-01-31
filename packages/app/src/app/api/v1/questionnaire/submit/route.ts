@@ -6,19 +6,19 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   saveQuestionnaireResponse,
   getQuestionnaireResponses,
   getUserProfile,
   saveArchetypeScores,
   saveCauseAffinities,
-} from '@bangui/db';
+} from '../../../../../lib/db';
 import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agents';
 import type { QuestionnaireSubmitRequest, UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const body: QuestionnaireSubmitRequest = await request.json();
   const { userId, responses } = body;
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   // Check if questionnaire is complete
   const allResponses = await getQuestionnaireResponses(db, userId);
-  const answeredIds = new Set(allResponses.map((r) => r.questionId));
+  const answeredIds = new Set(allResponses.map((r) => r.question_id));
   const complete = isQuestionnaireComplete(answeredIds);
 
   if (complete) {
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const analysis = analyzeResponses(
       userId,
       allResponses.map((r) => ({
-        questionId: r.questionId,
+        questionId: r.question_id,
         response: r.response,
       }))
     );
