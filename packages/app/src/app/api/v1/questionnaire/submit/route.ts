@@ -14,7 +14,7 @@ import {
   saveArchetypeScores,
   saveCauseAffinities,
 } from '../../../../../lib/db';
-import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agent';
+import { analyzeResponses, isQuestionnaireComplete, allQuestions } from '@bangui/agents';
 import type { QuestionnaireSubmitRequest, UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   // Save each response
   for (const response of responses) {
     await saveQuestionnaireResponse(db, {
-      userId: userId as string,
+      userId,
       questionId: response.questionId,
       response: response.response,
       responseTimeMs: response.responseTimeMs,
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Check if questionnaire is complete
-  const allResponses = await getQuestionnaireResponses(db, userId as string);
+  const allResponses = await getQuestionnaireResponses(db, userId);
   const answeredIds = new Set(allResponses.map((r) => r.question_id));
   const complete = isQuestionnaireComplete(answeredIds);
 
@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
     );
 
     // Save results
-    const profile = await getUserProfile(db, userId as string);
+    const profile = await getUserProfile(db, userId);
     if (profile) {
       await saveArchetypeScores(db, {
-        profileId: profile.id,
+        profileId: profile.id as UUID,
         scores: [
           {
             archetype: analysis.archetypeProfile.primaryArchetype,
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       });
 
       await saveCauseAffinities(db, {
-        profileId: profile.id,
+        profileId: profile.id as UUID,
         affinities: analysis.causeAffinities.slice(0, 5).map((a) => ({
           causeCategory: a.causeId,
           affinityScore: a.affinityScore,

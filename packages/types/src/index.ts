@@ -31,6 +31,7 @@ export const Chain = {
   ETHEREUM: 'ethereum',
   POLYGON: 'polygon',
   ARBITRUM: 'arbitrum',
+  BASE: 'base',
 } as const;
 export type Chain = (typeof Chain)[keyof typeof Chain];
 

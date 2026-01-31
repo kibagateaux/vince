@@ -1,0 +1,46 @@
+{
+  "name": "@bangui/agents",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vince": {
+      "types": "./dist/vince/index.d.ts",
+      "import": "./dist/vince/index.js"
+    },
+    "./kincho": {
+      "types": "./dist/kincho/index.d.ts",
+      "import": "./dist/kincho/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch vince/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.1",
+    "@bangui/types": "*",
+    "@elizaos/core": "^1.6.0",
+    "@supabase/supabase-js": "^2.93.3",
+    "@types/uuid": "^10.0.0",
+    "openai": "^4.73.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.0"
+  }
+}

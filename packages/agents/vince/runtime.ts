@@ -1,11 +1,15 @@
 /**
  * @module @bangui/agent/vince-runtime
- * Dynamic AI response generation using OpenRouter API
+ * Dynamic AI response generation using Anthropic or OpenRouter API
  */
 
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { vinceCharacter } from './character.js';
 import type { Question } from '@bangui/types';
+
+/** LLM provider type */
+export type LLMProvider = 'openrouter' | 'anthropic';
 
 /** Message in conversation history */
 export interface ConversationMessage {
@@ -29,9 +33,11 @@ export interface ResponseContext {
 
 /** Vince runtime configuration */
 export interface VinceRuntimeConfig {
-  /** OpenRouter API key */
+  /** API key (OpenRouter or Anthropic) */
   apiKey: string;
-  /** Model to use (optional - OpenRouter will use default if not specified) */
+  /** LLM provider to use */
+  provider?: LLMProvider;
+  /** Model to use (optional) */
   model?: string;
   /** Max tokens for response */
   maxTokens?: number;
@@ -41,13 +47,61 @@ export interface VinceRuntimeConfig {
  * Creates a Vince runtime instance for generating dynamic responses
  */
 export function createVinceRuntime(config: VinceRuntimeConfig) {
-  const client = new OpenAI({
-    baseURL: 'https://openrouter.ai/api/v1',
-    apiKey: config.apiKey,
-  });
-  // Use provided model or let OpenRouter handle it with auto-routing
-  const model = config.model ?? 'openrouter/auto';
+  const provider = config.provider ?? 'openrouter';
   const maxTokens = config.maxTokens ?? 1024;
+
+  // Create appropriate client based on provider
+  let openaiClient: OpenAI | null = null;
+  let anthropicClient: Anthropic | null = null;
+  let model: string;
+
+  if (provider === 'anthropic') {
+    anthropicClient = new Anthropic({ apiKey: config.apiKey });
+    model = config.model ?? 'claude-sonnet-4-20250514';
+  } else {
+    openaiClient = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: config.apiKey,
+    });
+    model = config.model ?? 'openrouter/auto';
+  }
+
+  /**
+   * Complete a chat request using the configured provider
+   */
+  async function completeChat(
+    systemPrompt: string,
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    if (provider === 'anthropic' && anthropicClient) {
+      const response = await anthropicClient.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        temperature: 0.7,
+      });
+
+      const textBlock = response.content.find((block) => block.type === 'text');
+      return textBlock?.type === 'text' ? textBlock.text : '';
+    } else if (openaiClient) {
+      const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      ];
+
+      const response = await openaiClient.chat.completions.create({
+        model,
+        max_tokens: maxTokens,
+        messages: apiMessages,
+        temperature: 0.7,
+      });
+
+      return response.choices[0]?.message?.content ?? '';
+    }
+
+    throw new Error('No LLM client configured');
+  }
 
   /**
    * Builds the system prompt based on current context
@@ -157,7 +211,6 @@ Keep responses concise (2-4 sentences typically). Be warm and conversational, no
   async function generateResponse(context: ResponseContext): Promise<string> {
     const systemPrompt = buildSystemPrompt(context);
 
-    // Convert our messages to OpenAI format with system prompt
     const userMessages = context.messages.length > 0
       ? context.messages.map(m => ({
           role: m.role as 'user' | 'assistant',
@@ -165,19 +218,8 @@ Keep responses concise (2-4 sentences typically). Be warm and conversational, no
         }))
       : [{ role: 'user' as const, content: 'Hello, I just connected.' }];
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-      ...userMessages,
-    ];
-
-    const response = await client.chat.completions.create({
-      model,
-      max_tokens: maxTokens,
-      messages,
-    });
-
-    // Extract text from response
-    return response.choices[0]?.message?.content ?? "I'm here to help. What would you like to explore?";
+    const result = await completeChat(systemPrompt, userMessages);
+    return result || "I'm here to help. What would you like to explore?";
   }
 
   /**
@@ -211,23 +253,12 @@ Keep responses concise (2-4 sentences typically). Be warm and conversational, no
 
     const systemPrompt = buildSystemPrompt(context) + systemAddition;
 
-    // Convert messages to OpenAI format with system prompt
     const userMessages = messages.length > 0
       ? messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
       : [{ role: 'user' as const, content: 'Hello, I just connected.' }];
 
-    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-      ...userMessages,
-    ];
-
-    const response = await client.chat.completions.create({
-      model,
-      max_tokens: maxTokens,
-      messages: apiMessages,
-    });
-
-    return response.choices[0]?.message?.content ?? currentQuestion.text;
+    const result = await completeChat(systemPrompt, userMessages);
+    return result || currentQuestion.text;
   }
 
   /**

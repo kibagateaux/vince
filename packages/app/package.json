@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@bangui/agent": "*",
+    "@bangui/agents": "*",
     "@bangui/types": "*",
     "@privy-io/react-auth": "^1.92.0",
     "@privy-io/wagmi": "^0.2.0",

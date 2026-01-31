@@ -21,6 +21,7 @@ const CHAIN_IDS: Record<Chain, number> = {
   ethereum: 1,
   polygon: 137,
   arbitrum: 42161,
+  base: 8453,
 };
 
 /** Default gas estimates by chain */
@@ -28,6 +29,7 @@ const DEFAULT_GAS_ESTIMATES: Record<Chain, BigIntString> = {
   ethereum: '100000' as BigIntString,
   polygon: '150000' as BigIntString,
   arbitrum: '200000' as BigIntString,
+  base: '100000' as BigIntString,
 };
 
 /** deposit(address,uint256) function selector */

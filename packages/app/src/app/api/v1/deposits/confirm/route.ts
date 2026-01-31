@@ -11,7 +11,6 @@ import {
   getSupabase,
   updateDepositStatus,
   getDeposit,
-  findOrCreateConversation,
   createMessage,
   getUserProfile,
 } from '../../../../../lib/db';
@@ -26,9 +25,9 @@ import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation } 
 export async function POST(request: NextRequest) {
   const db = getSupabase();
   const { depositId, txHash, conversationId } = await request.json() as {
-    depositId: string;
+    depositId: UUID;
     txHash: string;
-    conversationId?: string;
+    conversationId?: UUID;
   };
 
   // Update deposit status
@@ -52,7 +51,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Build user preferences from profile
-  const profile = await getUserProfile(db, deposit.user_id);
+  const profile = await getUserProfile(db, deposit.user_id as UUID);
   const userPreferences: UserPreferences = {
     causes: profile?.causeAffinities?.map((a) => a.cause_category) ?? ['general'],
     riskTolerance: profile?.risk_tolerance ?? 'moderate',
@@ -125,7 +124,7 @@ export async function POST(request: NextRequest) {
     // Submit to Kincho
     const allocationRequest = await submitAllocationRequest(db, {
       depositId: depositId,
-      userId: deposit.user_id,
+      userId: deposit.user_id as UUID,
       conversationId: conversationId,
       amount: deposit.amount,
       userPreferences,

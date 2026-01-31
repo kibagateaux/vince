@@ -17,9 +17,9 @@ import {
 import type { UUID, UserPreferences, VinceRecommendation } from '@bangui/types';
 
 interface AllocationRequestPayload {
-  depositId?: string;
-  userId: string;
-  conversationId?: string;
+  depositId?: UUID;
+  userId: UUID;
+  conversationId?: UUID;
   amount: string;
   userPreferences: UserPreferences;
   vinceRecommendation: VinceRecommendation;

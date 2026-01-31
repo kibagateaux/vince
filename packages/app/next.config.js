@@ -7,7 +7,7 @@ config({ path: resolve(process.cwd(), '../../.env') });
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@bangui/agent', '@bangui/types'],
+  transpilePackages: ['@bangui/agents', '@bangui/types'],
 };
 
 export default nextConfig;

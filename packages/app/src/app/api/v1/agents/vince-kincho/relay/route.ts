@@ -9,12 +9,10 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getSupabase,
-  getConversation,
   createMessage,
   getDeposit,
   getUserProfile,
   updateConversationState,
-  type ConversationState,
 } from '../../../../../../lib/db';
 import {
   submitAllocationRequest,
@@ -22,13 +20,12 @@ import {
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../../lib/kincho-helpers';
-import { analyzeResponses } from '@bangui/agent';
 import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation } from '@bangui/types';
 
 interface RelayPayload {
-  depositId: string;
-  conversationId: string;
-  userId: string;
+  depositId: UUID;
+  conversationId: UUID;
+  userId: UUID;
 }
 
 export async function POST(request: NextRequest) {
@@ -139,7 +136,7 @@ export async function POST(request: NextRequest) {
       suggestedAllocations,
       psychProfile: profile?.archetypeScores?.[0]
         ? ({
-            userId: payload.userId as UUID,
+            userId: payload.userId,
             archetypeProfile: {
               primaryArchetype: profile.archetypeScores[0].archetype,
               secondaryTraits: [],
@@ -200,7 +197,7 @@ export async function POST(request: NextRequest) {
 
     // Update conversation state based on decision
     if (decision.decision === 'approved' || decision.decision === 'modified') {
-      await updateConversationState(db, payload.conversationId, 'deposit_confirmed' as ConversationState);
+      await updateConversationState(db, payload.conversationId, 'deposit_confirmed');
     }
 
     return NextResponse.json({

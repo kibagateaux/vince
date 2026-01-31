@@ -21,7 +21,7 @@ export type Platform = 'web' | 'telegram' | 'discord';
 export type Sender = 'user' | 'vince' | 'kincho' | 'system';
 export type RiskTolerance = 'conservative' | 'moderate' | 'aggressive';
 export type DepositStatus = 'pending' | 'confirmed' | 'failed';
-export type Chain = 'ethereum' | 'polygon' | 'arbitrum';
+export type Chain = 'ethereum' | 'polygon' | 'arbitrum' | 'base';
 export type Archetype =
   | 'impact_maximizer'
   | 'community_builder'

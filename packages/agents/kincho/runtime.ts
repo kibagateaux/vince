@@ -5,7 +5,8 @@
  */
 
 import OpenAI from 'openai';
-import { kinchoCharacter } from './kincho-character.js';
+import Anthropic from '@anthropic-ai/sdk';
+import { kinchoCharacter } from './character.js';
 import { analyzeFinancials } from './subagents/financial-analyzer.js';
 import { assessRisk } from './subagents/risk-engine.js';
 import { evaluateMetaCognition } from './subagents/meta-cognition.js';
@@ -36,10 +37,15 @@ export interface KinchoResponseContext {
   messages: AgentConversationMessage[];
 }
 
+/** LLM provider type */
+export type LLMProvider = 'openrouter' | 'anthropic';
+
 /** Kincho runtime configuration */
 export interface KinchoRuntimeConfig {
-  /** OpenRouter API key */
+  /** API key (OpenRouter or Anthropic) */
   apiKey: string;
+  /** LLM provider to use */
+  provider?: LLMProvider;
   /** Model to use */
   model?: string;
   /** Max tokens for response */
@@ -82,12 +88,66 @@ const DEFAULT_KINCHO_CONFIG: KinchoConfig = {
  * Creates a Kincho runtime instance for allocation decisions
  */
 export function createKinchoRuntime(config: KinchoRuntimeConfig) {
-  const client = new OpenAI({
-    baseURL: 'https://openrouter.ai/api/v1',
-    apiKey: config.apiKey,
-  });
-  const model = config.model ?? 'openrouter/auto';
+  const provider = config.provider ?? 'openrouter';
   const maxTokens = config.maxTokens ?? 2048;
+
+  // Create appropriate client based on provider
+  let openaiClient: OpenAI | null = null;
+  let anthropicClient: Anthropic | null = null;
+  let model: string;
+
+  if (provider === 'anthropic') {
+    anthropicClient = new Anthropic({ apiKey: config.apiKey });
+    model = config.model ?? 'claude-sonnet-4-20250514';
+  } else {
+    openaiClient = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: config.apiKey,
+    });
+    model = config.model ?? 'openrouter/auto';
+  }
+
+  /**
+   * Complete a chat request using the configured provider
+   */
+  async function completeChat(
+    systemPrompt: string,
+    userMessage: string,
+    jsonMode = false
+  ): Promise<string> {
+    if (provider === 'anthropic' && anthropicClient) {
+      let finalSystemPrompt = systemPrompt;
+      if (jsonMode) {
+        finalSystemPrompt += '\n\nIMPORTANT: You must respond with valid JSON only. No other text or markdown.';
+      }
+
+      const response = await anthropicClient.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system: finalSystemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+        temperature: 0.7,
+      });
+
+      const textBlock = response.content.find((block) => block.type === 'text');
+      return textBlock?.type === 'text' ? textBlock.text : '';
+    } else if (openaiClient) {
+      const response = await openaiClient.chat.completions.create({
+        model,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: 0.7,
+        ...(jsonMode && { response_format: { type: 'json_object' } }),
+      });
+
+      return response.choices[0]?.message?.content ?? '';
+    }
+
+    throw new Error('No LLM client configured');
+  }
 
   // CRITICAL: Kincho can ONLY transact with this vault address
   const allowedVaultAddress = config.vaultAddress;
@@ -266,27 +326,14 @@ Before finalizing any decision:
       subagentConsensus: consensus,
     };
 
-    // Convert messages to OpenAI format
-    const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-      ...messages.map((m) => ({
-        role: m.role === 'vince' ? ('user' as const) : ('assistant' as const),
-        content: m.content,
-      })),
-      {
-        role: 'user',
-        content: JSON.stringify(enrichedRequest),
-      },
-    ];
+    // Build conversation history for the LLM
+    const historyText = messages.length > 0
+      ? 'Previous conversation:\n' + messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n') + '\n\n'
+      : '';
 
-    const response = await client.chat.completions.create({
-      model,
-      max_tokens: maxTokens,
-      messages: apiMessages,
-      response_format: { type: 'json_object' },
-    });
+    const userMessage = historyText + 'New allocation request:\n' + JSON.stringify(enrichedRequest, null, 2);
 
-    const responseText = response.choices[0]?.message?.content ?? '{}';
+    const responseText = await completeChat(systemPrompt, userMessage, true);
 
     try {
       const parsed = JSON.parse(responseText) as KinchoAllocationResponse;

@@ -11,7 +11,7 @@ import {
   findOrCreateWallet,
   createDeposit,
 } from '../../../../../lib/db';
-import { buildDepositTx, simulateTx } from '@bangui/agent';
+import { buildDepositTx, simulateTx } from '@bangui/agents';
 import type {
   DepositPrepareRequest,
   DepositPrepareResponse,
@@ -27,12 +27,12 @@ export async function POST(request: NextRequest) {
   const contractAddress = (process.env.DAF_CONTRACT_ADDRESS ?? '0x0000000000000000000000000000000000000000') as Address;
 
   // Get or create wallet
-  const wallet = await findOrCreateWallet(db, userId as string, walletAddress, chain);
+  const wallet = await findOrCreateWallet(db, userId, walletAddress, chain);
 
   // Create pending deposit record
   const deposit = await createDeposit(db, {
-    userId: userId as string,
-    walletId: wallet.id,
+    userId,
+    walletId: wallet.id as UUID,
     amount,
     token,
   });
