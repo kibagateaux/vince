@@ -9,7 +9,28 @@ import { FC, ReactNode } from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const queryClient = new QueryClient();
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000,
+      },
+    },
+  });
+}
+
+let browserQueryClient: QueryClient | undefined = undefined;
+
+function getQueryClient() {
+  if (typeof window === 'undefined') {
+    // Server: always make a new query client
+    return makeQueryClient();
+  } else {
+    // Browser: make a new query client if we don't already have one
+    if (!browserQueryClient) browserQueryClient = makeQueryClient();
+    return browserQueryClient;
+  }
+}
 
 /** Privy app ID from environment - optional at build time */
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '';
@@ -22,6 +43,8 @@ interface ProvidersProps {
  * Client-side providers wrapper
  */
 export const Providers: FC<ProvidersProps> = ({ children }) => {
+  const queryClient = getQueryClient();
+
   // Show error state if Privy not configured
   if (!PRIVY_APP_ID) {
     return (
