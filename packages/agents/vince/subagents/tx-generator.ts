@@ -6,8 +6,12 @@
  */
 
 import { encodeFunctionData, type PublicClient } from 'viem';
-import type {
+import {
   Chain,
+  CHAIN_NAME_TO_ID,
+  getChainId as getChainIdFromName,
+} from '@bangui/types';
+import type {
   Address,
   BigIntString,
   UnsignedTransaction,
@@ -57,20 +61,14 @@ const erc20Abi = [
 // Constants
 // ============================================================================
 
-/** Chain ID mapping */
-const CHAIN_IDS: Record<Chain, number> = {
-  ethereum: 1,
-  polygon: 137,
-  arbitrum: 42161,
-  base: 8453,
-};
-
 /** Default gas estimates by chain */
 const DEFAULT_GAS_ESTIMATES: Record<Chain, BigIntString> = {
-  ethereum: '100000' as BigIntString,
-  polygon: '150000' as BigIntString,
-  arbitrum: '200000' as BigIntString,
-  base: '100000' as BigIntString,
+  [Chain.ETHEREUM]: '100000' as BigIntString,
+  [Chain.POLYGON]: '150000' as BigIntString,
+  [Chain.ARBITRUM]: '200000' as BigIntString,
+  [Chain.BASE]: '100000' as BigIntString,
+  [Chain.SEPOLIA]: '100000' as BigIntString,
+  [Chain.BASE_SEPOLIA]: '100000' as BigIntString,
 };
 
 /** Gas estimate for ERC20 approve transactions */
@@ -85,7 +83,7 @@ const APPROVE_GAS_ESTIMATE: BigIntString = '50000' as BigIntString;
  * @param chain - Chain identifier
  * @returns EVM chain ID
  */
-export const getChainId = (chain: Chain): number => CHAIN_IDS[chain];
+export const getChainId = (chain: Chain): number => getChainIdFromName(chain);
 
 /**
  * Encodes deposit function call data for AiETH.deposit(uint256)

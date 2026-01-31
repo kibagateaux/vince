@@ -32,8 +32,65 @@ export const Chain = {
   POLYGON: 'polygon',
   ARBITRUM: 'arbitrum',
   BASE: 'base',
+  SEPOLIA: 'sepolia',
+  BASE_SEPOLIA: 'base_sepolia',
 } as const;
 export type Chain = (typeof Chain)[keyof typeof Chain];
+
+/** Chain ID to Chain name mapping */
+export const CHAIN_ID_TO_NAME: Record<number, Chain> = {
+  1: Chain.ETHEREUM,
+  137: Chain.POLYGON,
+  42161: Chain.ARBITRUM,
+  8453: Chain.BASE,
+  11155111: Chain.SEPOLIA,
+  84532: Chain.BASE_SEPOLIA,
+} as const;
+
+/** Chain name to Chain ID mapping */
+export const CHAIN_NAME_TO_ID: Record<Chain, number> = {
+  [Chain.ETHEREUM]: 1,
+  [Chain.POLYGON]: 137,
+  [Chain.ARBITRUM]: 42161,
+  [Chain.BASE]: 8453,
+  [Chain.SEPOLIA]: 11155111,
+  [Chain.BASE_SEPOLIA]: 84532,
+} as const;
+
+/** Chain display names for UI */
+export const CHAIN_DISPLAY_NAMES: Record<Chain, string> = {
+  [Chain.ETHEREUM]: 'Ethereum',
+  [Chain.POLYGON]: 'Polygon',
+  [Chain.ARBITRUM]: 'Arbitrum',
+  [Chain.BASE]: 'Base',
+  [Chain.SEPOLIA]: 'Sepolia',
+  [Chain.BASE_SEPOLIA]: 'Base Sepolia',
+} as const;
+
+/** Default RPC URLs for each chain */
+export const CHAIN_RPC_URLS: Record<Chain, string> = {
+  [Chain.ETHEREUM]: 'https://eth.llamarpc.com',
+  [Chain.POLYGON]: 'https://polygon.llamarpc.com',
+  [Chain.ARBITRUM]: 'https://arb1.arbitrum.io/rpc',
+  [Chain.BASE]: 'https://mainnet.base.org',
+  [Chain.SEPOLIA]: 'https://eth-sepolia.g.alchemy.com/v2/demo',
+  [Chain.BASE_SEPOLIA]: 'https://sepolia.base.org',
+} as const;
+
+/** Testnet chains */
+export const TESTNET_CHAINS: readonly Chain[] = [Chain.SEPOLIA, Chain.BASE_SEPOLIA] as const;
+
+/** Mainnet chains */
+export const MAINNET_CHAINS: readonly Chain[] = [Chain.ETHEREUM, Chain.POLYGON, Chain.ARBITRUM, Chain.BASE] as const;
+
+/** Check if a chain is a testnet */
+export const isTestnet = (chain: Chain): boolean => TESTNET_CHAINS.includes(chain);
+
+/** Get chain ID from chain name */
+export const getChainId = (chain: Chain): number => CHAIN_NAME_TO_ID[chain];
+
+/** Get chain name from chain ID */
+export const getChainName = (chainId: number): Chain | undefined => CHAIN_ID_TO_NAME[chainId];
 
 /** User status in the system */
 export const UserStatus = {
