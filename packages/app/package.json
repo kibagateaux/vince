@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run build -w @bangui/agents && next build",
     "start": "next start",
     "lint": "next lint"
   },
