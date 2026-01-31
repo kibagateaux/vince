@@ -1,6 +1,6 @@
 /**
  * @module @bangui/app/components/Message
- * Chat message display component
+ * Chat message display component with glass-morphism styling
  */
 
 'use client';
@@ -18,21 +18,28 @@ interface MessageProps {
 }
 
 /**
- * Renders a single chat message
+ * Renders a single chat message with glass-morphism styling
  */
 export const Message: FC<MessageProps> = ({ message, onAction, selectedOptions, onToggleOption }) => {
   const isUser = message.sender === 'user';
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+      {/* Vince avatar for non-user messages */}
+      {!isUser && (
+        <div className="h-8 w-8 rounded-full bg-indigo-600/80 backdrop-blur-sm flex items-center justify-center flex-shrink-0 mr-3 border border-indigo-400/30 shadow-lg">
+          <span className="text-sm font-bold text-white">V</span>
+        </div>
+      )}
+
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[80%] px-4 py-3 ${
           isUser
-            ? 'bg-blue-600 text-white rounded-br-md'
-            : 'bg-gray-100 text-gray-900 rounded-bl-md'
+            ? 'glass-card-user text-white'
+            : 'glass-card-vince text-white'
         }`}
       >
-        <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+        <p className="whitespace-pre-wrap text-sm glass-text">{message.content}</p>
 
         {/* Action buttons */}
         {message.actions && message.actions.length > 0 && (
@@ -45,10 +52,10 @@ export const Message: FC<MessageProps> = ({ message, onAction, selectedOptions, 
                     <button
                       key={`${i}-${j}`}
                       onClick={() => onToggleOption?.(option)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition-colors ${
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
                         isSelected
-                          ? 'bg-blue-600 text-white hover:bg-blue-700'
-                          : 'bg-white text-gray-800 hover:bg-gray-50'
+                          ? 'bg-indigo-500/80 text-white border border-indigo-400/50 shadow-md'
+                          : 'bg-white/10 text-white/90 border border-white/20 hover:bg-white/20 backdrop-blur-sm'
                       }`}
                     >
                       {option}
@@ -66,7 +73,7 @@ export const Message: FC<MessageProps> = ({ message, onAction, selectedOptions, 
                   <button
                     key={i}
                     onClick={() => onAction?.(action)}
-                    className="rounded-full bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition-colors"
+                    className="rounded-full bg-emerald-500/80 backdrop-blur-sm px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500/90 transition-all border border-emerald-400/30 shadow-lg hover:shadow-emerald-500/30"
                   >
                     {buttonLabel}
                   </button>
@@ -77,7 +84,7 @@ export const Message: FC<MessageProps> = ({ message, onAction, selectedOptions, 
           </div>
         )}
 
-        <span className="mt-1 block text-xs opacity-60">
+        <span className="mt-1 block text-xs text-white/50">
           {new Date(message.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',

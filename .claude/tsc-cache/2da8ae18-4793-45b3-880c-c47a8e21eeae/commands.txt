@@ -1,0 +1,2 @@
+packages/app:build:cd /Users/chrisrair/vince/vince/packages/app && npm run build
+packages/app:tsc:cd /Users/chrisrair/vince/vince/packages/app && npx tsc --noEmit
