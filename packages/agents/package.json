@@ -23,7 +23,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --build",
     "dev": "tsx watch vince/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
