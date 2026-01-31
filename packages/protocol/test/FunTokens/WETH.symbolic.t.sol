@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
-// https://github.com/horsefacts/AiETH-invariant-testing/blob/main/test/WETH9.symbolic.t.sol
+// https://github.com/horsefacts/AiEth-invariant-testing/blob/main/test/WETH9.symbolic.t.sol
 
 pragma solidity ^0.8.26;
 
 import {SymTest} from "halmos-cheatcodes/SymTest.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {AiETH} from "../src/aiETH.sol";
-import {IERC20} from "../src/Interfaces.sol";
-import {AiETHBaseTest} from "./AiETHBaseTest.t.sol";
-import {AiETHSepoliaTest} from "./sepolia/AiETHSepoliaTest.t.sol";
-import {AiETHBaseNetworkTest} from "./base/AiETHBaseNetworkTest.t.sol";
+import {AiEth} from "../../src/AiEth.sol";
+import {IERC20} from "../../src/Interfaces.sol";
+import {AiEthBaseTest} from "./AiEthBaseTest.t.sol";
 
-/// @notice Abstract symbolic tests that work on any network
-abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
+contract WETHSymTest is SymTest, AiEthBaseTest {
     function test_globalInvariants(bytes4 selector, address caller, uint256 val) public {
         // Execute an arbitrary tx
         vm.prank(caller);
@@ -21,21 +18,21 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         // if a valid selector, then call with data
         emit log_bytes(call);
         if (call.length != 0) {
-            (bool success,) = address(aiETH).call(call);
+            (bool success,) = address(funETH).call(call);
             vm.assume(success); // ignore reverting cases
         }
 
         // Record post-state
-        assert(aiETH.totalSupply() <= aiETH.underlying());
+        assert(funETH.totalSupply() <= funETH.underlying());
     }
 
     // @dev deposit() increases the caller's balance by exactly msg.value;
     function test_deposit_depositorBalanceUpdate(address guy, uint256 wad) public assumeValidAddress(guy) {
-        uint256 balanceBefore = aiETH.balanceOf(guy);
+        uint256 balanceBefore = funETH.balanceOf(guy);
 
         wad = _depositnnEth(guy, wad, true);
 
-        uint256 balanceAfter = aiETH.balanceOf(guy);
+        uint256 balanceAfter = funETH.balanceOf(guy);
 
         assert(balanceAfter == balanceBefore + wad);
     }
@@ -43,11 +40,11 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
     // @dev deposit() does not change the balance of any address besides the caller.
     function test_deposit_balancePreservation(address guy, address gal, uint256 wad) public assumeValidAddress(guy) {
         vm.assume(guy != gal);
-        uint256 balanceBefore = aiETH.balanceOf(gal);
+        uint256 balanceBefore = funETH.balanceOf(gal);
 
         wad = _depositnnEth(guy, wad, true);
 
-        uint256 balanceAfter = aiETH.balanceOf(gal);
+        uint256 balanceAfter = funETH.balanceOf(gal);
 
         assert(balanceAfter == balanceBefore);
     }
@@ -55,15 +52,15 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
     // @dev withdraw() decreases the caller's balance by exactly msg.value;
     function test_withdraw_withdrawerBalanceUpdate(address guy, uint256 wad) public assumeValidAddress(guy) {
         vm.assume(guy != address(debtToken));
-        vm.assume(guy != address(aiETH.aToken()));
+        vm.assume(guy != address(funETH.aToken()));
 
         wad = _depositnnEth(guy, wad, true);
 
-        uint256 balanceBefore = aiETH.balanceOf(guy);
+        uint256 balanceBefore = funETH.balanceOf(guy);
 
         _withdrawnnEth(guy, wad);
 
-        uint256 balanceAfter = aiETH.balanceOf(guy);
+        uint256 balanceAfter = funETH.balanceOf(guy);
 
         assert(balanceAfter == balanceBefore - wad);
     }
@@ -72,26 +69,26 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
     function test_withdraw_balancePreservation(address guy, address gal, uint256 wad) public assumeValidAddress(guy) {
         vm.assume(guy != gal);
         vm.assume(guy != address(debtToken));
-        vm.assume(guy != address(aiETH.aToken()));
+        vm.assume(guy != address(funETH.aToken()));
 
         wad = _depositnnEth(guy, wad, true);
 
-        uint256 balanceBefore = aiETH.balanceOf(gal);
+        uint256 balanceBefore = funETH.balanceOf(gal);
 
         _withdrawnnEth(guy, wad);
 
-        uint256 balanceAfter = aiETH.balanceOf(gal);
+        uint256 balanceAfter = funETH.balanceOf(gal);
 
         assert(balanceAfter == balanceBefore);
     }
 
     // @dev approve(dst, wad) sets dst allowance to wad.
     function test_approve_allowanceUpdate(address guy, address dst, uint256 wad) public assumeValidAddress(guy) {
-        wad = bound(wad, aiETH.MIN_DEPOSIT(), MAX_AAVE_DEPOSIT);
+        wad = bound(wad, funETH.MIN_DEPOSIT(), MAX_AAVE_DEPOSIT);
         vm.prank(guy);
-        aiETH.approve(dst, wad);
+        funETH.approve(dst, wad);
 
-        uint256 allowanceAfter = aiETH.allowance(guy, dst);
+        uint256 allowanceAfter = funETH.allowance(guy, dst);
 
         assert(allowanceAfter == wad);
     }
@@ -103,18 +100,18 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
     {
         vm.assume(guy != gal);
 
-        wad = bound(wad, aiETH.MIN_DEPOSIT(), MAX_AAVE_DEPOSIT);
+        wad = bound(wad, funETH.MIN_DEPOSIT(), MAX_AAVE_DEPOSIT);
 
-        uint256 allowanceBefore = aiETH.allowance(gal, dst2);
-
-        vm.prank(guy);
-        aiETH.approve(dst1, wad);
-
-        assert(aiETH.allowance(gal, dst2) == allowanceBefore); // original unnaffected by other user/dst
+        uint256 allowanceBefore = funETH.allowance(gal, dst2);
 
         vm.prank(guy);
-        aiETH.approve(dst2, wad); // to same dst unaffected too
-        assert(aiETH.allowance(gal, dst2) == allowanceBefore);
+        funETH.approve(dst1, wad);
+
+        assert(funETH.allowance(gal, dst2) == allowanceBefore); // original unnaffected by other user/dst
+
+        vm.prank(guy);
+        funETH.approve(dst2, wad); // to same dst unaffected too
+        assert(funETH.allowance(gal, dst2) == allowanceBefore);
     }
 
     // @dev transfer(dst, wad):
@@ -126,14 +123,14 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         // vm.deal(guy, wad);
         wad = _depositnnEth(guy, wad, true);
 
-        uint256 guyBalanceBefore = aiETH.balanceOf(guy);
-        uint256 dstBalanceBefore = aiETH.balanceOf(dst);
+        uint256 guyBalanceBefore = funETH.balanceOf(guy);
+        uint256 dstBalanceBefore = funETH.balanceOf(dst);
 
         vm.prank(guy);
-        aiETH.transfer(dst, wad);
+        funETH.transfer(dst, wad);
 
-        uint256 guyBalanceAfter = aiETH.balanceOf(guy);
-        uint256 dstBalanceAfter = aiETH.balanceOf(dst);
+        uint256 guyBalanceAfter = funETH.balanceOf(guy);
+        uint256 dstBalanceAfter = funETH.balanceOf(dst);
 
         assert(guyBalanceAfter == guyBalanceBefore - wad);
         assert(dstBalanceAfter == dstBalanceBefore + wad);
@@ -152,12 +149,12 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         // vm.deal(guy, wad);
         wad = _depositnnEth(guy, wad, true);
 
-        uint256 galBalanceBefore = aiETH.balanceOf(gal);
+        uint256 galBalanceBefore = funETH.balanceOf(gal);
 
         vm.prank(guy);
-        aiETH.transfer(dst, wad);
+        funETH.transfer(dst, wad);
 
-        uint256 galBalanceAfter = aiETH.balanceOf(gal);
+        uint256 galBalanceAfter = funETH.balanceOf(gal);
 
         assert(galBalanceAfter == galBalanceBefore);
     }
@@ -176,19 +173,19 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         wad = _depositnnEth(src, wad, true);
         // vm.deal(src, wad);
         vm.assume(approval > wad);
-        deal(address(aiETH), src, wad);
+        deal(address(funETH), src, wad);
 
         vm.prank(src);
-        aiETH.approve(guy, approval);
+        funETH.approve(guy, approval);
 
-        uint256 srcBalanceBefore = aiETH.balanceOf(src);
-        uint256 dstBalanceBefore = aiETH.balanceOf(dst);
+        uint256 srcBalanceBefore = funETH.balanceOf(src);
+        uint256 dstBalanceBefore = funETH.balanceOf(dst);
 
         vm.prank(guy);
-        aiETH.transferFrom(src, dst, wad);
+        funETH.transferFrom(src, dst, wad);
 
-        uint256 srcBalanceAfter = aiETH.balanceOf(src);
-        uint256 dstBalanceAfter = aiETH.balanceOf(dst);
+        uint256 srcBalanceAfter = funETH.balanceOf(src);
+        uint256 dstBalanceAfter = funETH.balanceOf(dst);
 
         assert(srcBalanceAfter == srcBalanceBefore - wad);
         assert(dstBalanceAfter == dstBalanceBefore + wad);
@@ -213,16 +210,16 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         vm.assume(approval > wad);
 
         vm.prank(src);
-        aiETH.approve(guy, approval);
+        funETH.approve(guy, approval);
 
-        uint256 srcBalanceBefore = aiETH.balanceOf(src);
-        uint256 galBalanceBefore = aiETH.balanceOf(gal);
+        uint256 srcBalanceBefore = funETH.balanceOf(src);
+        uint256 galBalanceBefore = funETH.balanceOf(gal);
 
         vm.prank(guy);
-        aiETH.transferFrom(src, dst, wad);
+        funETH.transferFrom(src, dst, wad);
 
-        assert(aiETH.balanceOf(gal) == galBalanceBefore);
-        assert(aiETH.balanceOf(src) == srcBalanceBefore - wad);
+        assert(funETH.balanceOf(gal) == galBalanceBefore);
+        assert(funETH.balanceOf(src) == srcBalanceBefore - wad);
     }
 
     // @dev transferFrom(src, dst, wad):
@@ -240,17 +237,17 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         vm.assume(approval > wad);
 
         vm.prank(src);
-        aiETH.approve(guy, approval);
+        funETH.approve(guy, approval);
 
-        uint256 guyAllowanceBefore = aiETH.allowance(src, guy);
+        uint256 guyAllowanceBefore = funETH.allowance(src, guy);
         emit log_named_uint("init apporval", approval);
         emit log_named_uint("guy apporval", guyAllowanceBefore);
 
         emit log_named_uint("amnt", wad);
         vm.prank(guy);
-        aiETH.transferFrom(src, dst, wad);
+        funETH.transferFrom(src, dst, wad);
 
-        uint256 guyAllowanceAfter = aiETH.allowance(src, guy);
+        uint256 guyAllowanceAfter = funETH.allowance(src, guy);
 
         assert(guyAllowanceAfter == guyAllowanceBefore - wad);
     }
@@ -271,15 +268,15 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         vm.assume(approval > wad);
 
         vm.prank(src);
-        aiETH.approve(guy, approval);
+        funETH.approve(guy, approval);
 
-        uint256 guyAllowanceBefore = aiETH.allowance(guy, guy);
+        uint256 guyAllowanceBefore = funETH.allowance(guy, guy);
         vm.assume(guyAllowanceBefore != type(uint256).max);
 
         vm.prank(guy);
-        aiETH.transferFrom(src, dst, wad);
+        funETH.transferFrom(src, dst, wad);
 
-        uint256 guyAllowanceAfter = aiETH.allowance(guy, guy);
+        uint256 guyAllowanceAfter = funETH.allowance(guy, guy);
 
         assert(guyAllowanceAfter == guyAllowanceBefore);
     }
@@ -297,15 +294,15 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         vm.assume(src != dst);
 
         vm.startPrank(src);
-        aiETH.approve(guy, type(uint256).max);
+        funETH.approve(guy, type(uint256).max);
         vm.stopPrank();
 
-        uint256 guyAllowanceBefore = aiETH.allowance(src, guy);
+        uint256 guyAllowanceBefore = funETH.allowance(src, guy);
 
         vm.prank(guy);
-        aiETH.transferFrom(src, dst, wad);
+        funETH.transferFrom(src, dst, wad);
 
-        uint256 guyAllowanceAfter = aiETH.allowance(src, guy);
+        uint256 guyAllowanceAfter = funETH.allowance(src, guy);
 
         assert(guyAllowanceAfter == guyAllowanceBefore);
         assert(guyAllowanceAfter == type(uint256).max);
@@ -322,9 +319,9 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
         // uint256 wad = uint256(vm.random());
 
         // Generate calldata based on the function selector
-        // wad = bound(wad, aiETH.MIN_DEPOSIT(), MAX_AAVE_DEPOSIT);
+        // wad = bound(wad, funETH.MIN_DEPOSIT(), MAX_AAVE_DEPOSIT);
         bytes memory args;
-        if (selector == AiETH.withdraw.selector) {
+        if (selector == AiEth.withdraw.selector) {
             args = abi.encode(wad);
         } else if (selector == IERC20.approve.selector) {
             args = abi.encode(guy, wad);
@@ -339,27 +336,5 @@ abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
             return bytes("");
         }
         return abi.encodePacked(selector, args);
-    }
-}
-
-/// @notice Sepolia network symbolic tests
-contract WETHSymTestSepolia is WETHSymTestBase, AiETHSepoliaTest {
-    function setUp() public override(AiETHSepoliaTest, AiETHBaseTest) {
-        AiETHSepoliaTest.setUp();
-    }
-}
-
-/// @notice Base network symbolic tests
-contract WETHSymTestBase_ is WETHSymTestBase, AiETHBaseNetworkTest {
-    function setUp() public override(AiETHBaseNetworkTest, AiETHBaseTest) {
-        AiETHBaseNetworkTest.setUp();
-    }
-
-    function _getRpcUrlKey() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (string memory) {
-        return AiETHBaseNetworkTest._getRpcUrlKey();
-    }
-
-    function _getForkBlock() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (uint256) {
-        return AiETHBaseNetworkTest._getForkBlock();
     }
 }

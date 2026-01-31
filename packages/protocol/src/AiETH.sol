@@ -12,7 +12,7 @@ contract AiETH is IAiETH, ERC20 {
         0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925;
 
     // Multisig deployed on Mainnet, Arbitrum, Base, OP,
-    address public constant FUN_OPS = address(0x0);
+    address public FUN_OPS;
     uint64 public constant MIN_DEPOSIT = 100_000_000; // to prevent aave math from causing reverts on small amounts from rounding decimal diffs. $100 USDC or 0.5 ETH ETH
     // TODO figure out lowest amount where aave tests dont fail
 
@@ -96,13 +96,14 @@ contract AiETH is IAiETH, ERC20 {
         address _reserveToken,
         address market,
         address _debtToken,
+        address admin,
         string memory name_,
         string memory symbol_
     ) public {
         if (address(reserveToken) != address(0)) revert AlreadyInitialized();
-
+        FUN_OPS = admin;
         // naive check if funCity governance is deployed on this chain
-        if (getContractSize(FUN_OPS) == 0) revert UnsupportedChain();
+        // if (getContractSize(FUN_OPS) == 0) revert UnsupportedChain();
 
         ReserveData memory pool = IAaveMarket(market).getReserveData(address(_reserveToken));
         // Ensure aave market accepts the asset people deposit

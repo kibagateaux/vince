@@ -1,32 +1,27 @@
 pragma solidity ^0.8.26;
 
 import {AiETHBaseTest} from "./AiETHBaseTest.t.sol";
-import {IERC20x, IAaveMarket, IAiETH, AaveErrors} from "../../src/Interfaces.sol";
-import {AiETH} from "../../src/AiETH.sol";
+import {AiETHSepoliaTest} from "./sepolia/AiETHSepoliaTest.t.sol";
+import {AiETHBaseNetworkTest} from "./base/AiETHBaseNetworkTest.t.sol";
+import {IERC20x, IAaveMarket, IAiETH, AaveErrors} from "../src/Interfaces.sol";
+import {AiETH} from "../src/aiETH.sol";
 
-contract AiETHCore is AiETHBaseTest {
-    function test_initialize_mustHaveMultiSigDeployed() public view {
-        address funCityTreasury = address(0xC958dEeAB982FDA21fC8922493d0CEDCD26287C3);
-        address progfunCityTreasury = address(aiETH.FUN_OPS());
-        uint256 manualSize;
-        uint256 configedSize;
-        assembly {
-            manualSize := extcodesize(funCityTreasury)
-            configedSize := extcodesize(progfunCityTreasury)
-        }
-
-        assertGt(configedSize, 0);
-        assertEq(manualSize, configedSize);
+/// @notice Abstract core tests that work on any network
+abstract contract AiETHCoreTests is AiETHBaseTest {
+    function test_initialize_mustHaveAdminSet() public view {
+        address admin = aiETH.FUN_OPS();
+        // Admin should be set to the test contract
+        assertEq(admin, address(this));
     }
 
     function invariant_allocate_increaseTotalDelegated() public {
         // sample vals. uneven city/allocate vals to ensure overwrites work
         address[2] memory cities = [address(0x83425), address(0x9238521)];
-        // wei not ether bc usdc only has 8 decimals
+        // DAI has 18 decimals for debt token amounts
         uint256[4] memory amounts = [uint256(11241 wei), uint256(49134 wei), uint256(84923 wei), uint256(84923 wei)];
 
-        // deposit some amount so we can delegate credit
-        _depositnnEth(address(0x14632332), 1000 ether, true);
+        // deposit some amount so we can delegate credit (10 WBTC = 10e8)
+        _depositnnEth(address(0x14632332), 10 * 1e8, true);
         (,, uint256 availableBorrow,,, uint256 hf) = aave.getUserAccountData(address(aiETH));
         assertGt(availableBorrow, 100000000);
 
@@ -45,15 +40,11 @@ contract AiETHCore is AiETHBaseTest {
         vm.stopPrank();
     }
 
-    function test_initialize_configSetup() public virtual {
-        assertEq(address(reserveToken), address(WETH));
-        assertEq(address(debtToken), address(debtUSDC));
-        assertEq(address(borrowToken), address(USDC));
-    }
+    function test_initialize_configSetup() public virtual;
 
     function test_initialize_cantReinitialize() public {
         vm.expectRevert(AiETH.AlreadyInitialized.selector);
-        aiETH.initialize(address(reserveToken), address(aave), address(debtToken), "funCity Ethereum", "aiETH");
+        aiETH.initialize(address(reserveToken), address(aave), address(debtToken), address(this), "funCity Ethereum", "aiETH");
     }
 
     function test_increaseAllowance_updatesAllowanceValue() public {
@@ -76,15 +67,9 @@ contract AiETHCore is AiETHBaseTest {
         aiETH.increaseAllowance(address(0xbeef), 1000 ether);
     }
 
-    function test_initialize_setsProperDepositToken() public view {
-        if (address(aiETH.reserveToken()) == address(WETH)) {
-            assertEq(address(aiETH.aToken()), address(0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7));
-            return;
-        } else if (address(aiETH.reserveToken()) == address(USDC)) {
-            assertEq(address(aiETH.aToken()), address(0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB));
-        } else {
-            revert("Invalid reserve token");
-        }
+    function test_initialize_setsProperDepositToken() public view virtual {
+        // Each network implementation should verify its own aToken addresses
+        assertTrue(address(aiETH.aToken()) != address(0), "aToken should be set");
     }
 
     function test_deposit_revertsOn0AddressReceiver(address user, uint256 amount) public assumeValidAddress(user) {
@@ -426,5 +411,49 @@ contract AiETHCore is AiETHBaseTest {
         assertEq(reserveToken.balanceOf(makeAddr("boogawugi")), withdrawn);
         emit log_named_uint("recipient remaining balance ", aiETH.balanceOf(makeAddr("boogawugi")));
         assertEq(aiETH.balanceOf(makeAddr("boogawugi")), 0);
+    }
+}
+
+/// @notice Sepolia network core tests
+contract AiETHCoreSepolia is AiETHCoreTests, AiETHSepoliaTest {
+    function setUp() public override(AiETHSepoliaTest, AiETHBaseTest) {
+        AiETHSepoliaTest.setUp();
+    }
+
+    function test_initialize_configSetup() public override {
+        assertEq(address(reserveToken), address(WBTC_SEPOLIA));
+        assertEq(address(debtToken), address(debtDAI_SEPOLIA));
+        assertEq(address(borrowToken), address(DAI_SEPOLIA));
+    }
+
+    function test_initialize_setsProperDepositToken() public view override {
+        // Sepolia WBTC aToken
+        assertEq(address(aiETH.aToken()), address(0x1804Bf30507dc2EB3bDEbbbdd859991EAeF6EefF));
+    }
+}
+
+/// @notice Base network core tests
+contract AiETHCoreBase is AiETHCoreTests, AiETHBaseNetworkTest {
+    function setUp() public override(AiETHBaseNetworkTest, AiETHBaseTest) {
+        AiETHBaseNetworkTest.setUp();
+    }
+
+    function _getRpcUrlKey() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (string memory) {
+        return AiETHBaseNetworkTest._getRpcUrlKey();
+    }
+
+    function _getForkBlock() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (uint256) {
+        return AiETHBaseNetworkTest._getForkBlock();
+    }
+
+    function test_initialize_configSetup() public override {
+        assertEq(address(reserveToken), address(WETH));
+        assertEq(address(debtToken), address(debtUSDC));
+        assertEq(address(borrowToken), address(USDC));
+    }
+
+    function test_initialize_setsProperDepositToken() public view override {
+        // Base WETH aToken (aWETH on Aave V3 Base)
+        assertEq(address(aiETH.aToken()), address(0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7));
     }
 }

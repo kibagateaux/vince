@@ -29,6 +29,7 @@ interface IAiETH {
         address _reserveToken,
         address market,
         address _debtToken,
+        address admin,
         string memory _name,
         string memory _sym
     ) external;
