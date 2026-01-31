@@ -14,7 +14,7 @@ export interface UseChatReturn {
   readonly messages: readonly DisplayMessage[];
   readonly connectionState: ConnectionState;
   readonly isWaitingForResponse: boolean;
-  readonly sendMessage: (content: string) => void;
+  readonly sendMessage: (content: string, chainId?: number) => void;
   readonly connect: (session: Session) => void;
   readonly disconnect: () => void;
 }
@@ -98,7 +98,7 @@ export const useChat = (): UseChatReturn => {
     }
   }, []);
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, chainId?: number) => {
     if (!sessionRef.current) {
       console.error('No session');
       return;
@@ -124,6 +124,7 @@ export const useChat = (): UseChatReturn => {
           content,
           metadata: {
             questionId: currentQuestionIdRef.current,
+            chainId,
           },
         }),
       });
