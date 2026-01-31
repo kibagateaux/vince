@@ -1,9 +1,11 @@
 /**
  * @module @bangui/agent/subagents/tx-generator
  * Transaction Generator - builds and simulates deposit transactions
+ * Uses viem for all web3 interactions
  * @see {@link @bangui/types#UnsignedTransaction}
  */
 
+import { encodeFunctionData, type PublicClient } from 'viem';
 import type {
   Chain,
   Address,
@@ -11,6 +13,45 @@ import type {
   UnsignedTransaction,
   TransactionSimulation,
 } from '@bangui/types';
+
+// ============================================================================
+// ABIs
+// ============================================================================
+
+/** AiETH deposit function ABI */
+const aiETHDepositAbi = [
+  {
+    name: 'deposit',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'dubloons', type: 'uint256' }],
+    outputs: [],
+  },
+] as const;
+
+/** ERC20 approve and allowance ABI */
+const erc20Abi = [
+  {
+    name: 'approve',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const;
 
 // ============================================================================
 // Constants
@@ -32,8 +73,8 @@ const DEFAULT_GAS_ESTIMATES: Record<Chain, BigIntString> = {
   base: '100000' as BigIntString,
 };
 
-/** deposit(address,uint256) function selector */
-const DEPOSIT_SELECTOR = '0x47e7ef24';
+/** Gas estimate for ERC20 approve transactions */
+const APPROVE_GAS_ESTIMATE: BigIntString = '50000' as BigIntString;
 
 // ============================================================================
 // Pure Functions
@@ -47,40 +88,33 @@ const DEPOSIT_SELECTOR = '0x47e7ef24';
 export const getChainId = (chain: Chain): number => CHAIN_IDS[chain];
 
 /**
- * Pads hex string to 32 bytes (64 chars)
- * @param hex - Hex string without 0x prefix
+ * Encodes deposit function call data for AiETH.deposit(uint256)
+ * @param amount - Deposit amount in wei (reserveToken decimals)
+ * @returns Encoded calldata
  */
-const padTo32Bytes = (hex: string): string => hex.padStart(64, '0');
-
-/**
- * Encodes address for ABI
- * @param address - Ethereum address
- */
-const encodeAddress = (address: Address): string =>
-  padTo32Bytes(address.slice(2).toLowerCase());
-
-/**
- * Encodes uint256 for ABI
- * @param value - BigInt string value
- */
-const encodeUint256 = (value: BigIntString): string => {
-  const bn = BigInt(value);
-  return padTo32Bytes(bn.toString(16));
+export const encodeDepositData = (amount: BigIntString): `0x${string}` => {
+  return encodeFunctionData({
+    abi: aiETHDepositAbi,
+    functionName: 'deposit',
+    args: [BigInt(amount)],
+  });
 };
 
 /**
- * Encodes deposit function call data
- * @param userAddress - Depositor address
- * @param amount - Deposit amount in wei
+ * Encodes approve function call data for ERC20.approve(address,uint256)
+ * @param spender - Address to approve spending
+ * @param amount - Amount to approve
  * @returns Encoded calldata
  */
-export const encodeDepositData = (
-  userAddress: Address,
+export const encodeApproveData = (
+  spender: Address,
   amount: BigIntString
 ): `0x${string}` => {
-  const encodedAddress = encodeAddress(userAddress);
-  const encodedAmount = encodeUint256(amount);
-  return `${DEPOSIT_SELECTOR}${encodedAddress}${encodedAmount}` as `0x${string}`;
+  return encodeFunctionData({
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [spender, BigInt(amount)],
+  });
 };
 
 /**
@@ -98,17 +132,122 @@ export interface BuildDepositTxInput {
 }
 
 /**
- * Builds unsigned deposit transaction
+ * Input for building approve transaction
+ */
+export interface BuildApproveTxInput {
+  /** ERC20 token address to approve */
+  readonly tokenAddress: Address;
+  /** Spender address (vault contract) */
+  readonly spenderAddress: Address;
+  /** Amount to approve */
+  readonly amount: BigIntString;
+  /** Target chain */
+  readonly chain: Chain;
+}
+
+/**
+ * Input for preparing deposit with approval check
+ */
+export interface PrepareDepositInput extends BuildDepositTxInput {
+  /** Reserve token address (token being deposited) */
+  readonly tokenAddress: Address;
+}
+
+/**
+ * Result of preparing deposit transactions
+ */
+export interface PrepareDepositResult {
+  /** Approve transaction if needed, null if already approved */
+  readonly approveTx: UnsignedTransaction | null;
+  /** Deposit transaction */
+  readonly depositTx: UnsignedTransaction;
+}
+
+/**
+ * Builds unsigned deposit transaction for AiETH
+ * Note: User must have approved the AiETH contract to spend their reserveToken first
  * @param input - Transaction parameters
  * @returns Unsigned transaction ready for signing
  */
 export const buildDepositTx = (input: BuildDepositTxInput): UnsignedTransaction => ({
   to: input.contractAddress,
-  data: encodeDepositData(input.userAddress, input.amount),
-  value: input.amount,
+  data: encodeDepositData(input.amount),
+  value: '0' as BigIntString,
   gasEstimate: DEFAULT_GAS_ESTIMATES[input.chain],
   chainId: getChainId(input.chain),
 });
+
+/**
+ * Builds unsigned ERC20 approve transaction
+ * @param input - Approve transaction parameters
+ * @returns Unsigned transaction ready for signing
+ */
+export const buildApproveTx = (input: BuildApproveTxInput): UnsignedTransaction => ({
+  to: input.tokenAddress,
+  data: encodeApproveData(input.spenderAddress, input.amount),
+  value: '0' as BigIntString,
+  gasEstimate: APPROVE_GAS_ESTIMATE,
+  chainId: getChainId(input.chain),
+});
+
+/**
+ * Checks ERC20 allowance using viem PublicClient
+ * @param client - Viem public client
+ * @param tokenAddress - ERC20 token address
+ * @param owner - Token owner address
+ * @param spender - Spender address to check allowance for
+ * @returns Current allowance as bigint
+ */
+export const checkAllowance = async (
+  client: PublicClient,
+  tokenAddress: Address,
+  owner: Address,
+  spender: Address
+): Promise<bigint> => {
+  const allowance = await client.readContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [owner, spender],
+  });
+  return allowance;
+};
+
+/**
+ * Prepares deposit transactions, checking allowance and including approve tx if needed
+ * @param input - Deposit parameters including token address
+ * @param client - Viem public client for checking allowance
+ * @returns Approve transaction (if needed) and deposit transaction
+ */
+export const prepareDepositTransactions = async (
+  input: PrepareDepositInput,
+  client: PublicClient
+): Promise<PrepareDepositResult> => {
+  // Check current allowance
+  const currentAllowance = await checkAllowance(
+    client,
+    input.tokenAddress,
+    input.userAddress,
+    input.contractAddress
+  );
+
+  const depositAmount = BigInt(input.amount);
+
+  // Build approve tx if allowance is insufficient
+  const approveTx = currentAllowance < depositAmount
+    ? buildApproveTx({
+        tokenAddress: input.tokenAddress,
+        spenderAddress: input.contractAddress,
+        amount: input.amount,
+        chain: input.chain,
+      })
+    : null;
+
+  // Build deposit tx
+  const depositTx = buildDepositTx(input);
+
+  return { approveTx, depositTx };
+};
 
 /**
  * Large amount threshold for warnings (100 ETH equivalent)
