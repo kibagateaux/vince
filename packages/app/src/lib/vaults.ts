@@ -35,12 +35,13 @@ export interface VaultMetadata {
  */
 export const VAULTS: readonly VaultMetadata[] = [
   // Sepolia Testnet (Default)
+  // Falls back to DAF_CONTRACT_ADDRESS for backwards compatibility
   {
     id: 'sepolia-main',
     name: 'Sepolia DAF Vault',
     chain: Chain.SEPOLIA,
     chainId: CHAIN_NAME_TO_ID[Chain.SEPOLIA],
-    address: (process.env.NEXT_PUBLIC_DAF_CONTRACT_SEPOLIA ?? '0x0000000000000000000000000000000000000000') as Address,
+    address: (process.env.NEXT_PUBLIC_DAF_CONTRACT_SEPOLIA ?? process.env.DAF_CONTRACT_ADDRESS ?? '0x0000000000000000000000000000000000000000') as Address,
     reserveToken: 'ETH',
     supportedCauses: ['global_health', 'education', 'environment', 'economic_empowerment', 'policy_advocacy', 'local_community', 'arts_culture', 'climate'],
     isPrimary: true,

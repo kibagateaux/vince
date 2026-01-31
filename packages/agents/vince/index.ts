@@ -32,6 +32,9 @@ export {
 
 export {
   buildDepositTx,
+  buildApproveTx,
+  prepareDepositTransactions,
+  checkAllowance,
   simulateTx,
   getChainId,
   formatAmount,

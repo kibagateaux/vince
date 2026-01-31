@@ -65,6 +65,10 @@ export const prepareDeposit = async (params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Deposit preparation failed: ${res.status}`);
+  }
   return res.json();
 };
 
