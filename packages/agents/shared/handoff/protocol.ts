@@ -10,8 +10,8 @@ import {
   getAgentConversationByRequest,
   createAgentConversation,
   storeMemory,
-} from '@bangui/db';
-import type { Db } from '@bangui/db';
+} from '../db/index.js';
+import type { Db } from '../db/index.js';
 import type {
   HandoffMessage,
   HandoffResult,

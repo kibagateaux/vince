@@ -6,11 +6,11 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   findOrCreateWallet,
   createDeposit,
-} from '@bangui/db';
+} from '../../../../../lib/db';
 import { buildDepositTx, simulateTx } from '@bangui/agents';
 import type {
   DepositPrepareRequest,
@@ -20,7 +20,7 @@ import type {
 } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const body: DepositPrepareRequest & { walletAddress: Address } = await request.json();
   const { userId, amount, token, chain, walletAddress } = body;
 

@@ -1,12 +1,15 @@
 pragma solidity ^0.8.26;
 
-import {AiETH} from "../../src/AiETH.sol";
-import {IERC20x, IAaveMarket, IAiETH, AaveErrors} from "../../src/Interfaces.sol";
+import {AiETH} from "../src/aiETH.sol";
+import {IERC20x, IAaveMarket, IAiETH, AaveErrors} from "../src/Interfaces.sol";
 
 import {AiETHBaseTest} from "./AiETHBaseTest.t.sol";
+import {AiETHSepoliaTest} from "./sepolia/AiETHSepoliaTest.t.sol";
+import {AiETHBaseNetworkTest} from "./base/AiETHBaseNetworkTest.t.sol";
 import {Handler} from "./AiETHPlaybook.t.sol";
 
-contract AiETHAaveIntegration is AiETHBaseTest {
+/// @notice Abstract Aave integration tests that work on any network
+abstract contract AiETHAaveIntegrationTests is AiETHBaseTest {
     Handler public handler;
 
     function setUp() public virtual override {
@@ -169,5 +172,51 @@ contract AiETHAaveIntegration is AiETHBaseTest {
         uint256 price = aiETH.price(address(borrowToken));
         emit log_named_uint("debt asset price", price);
         assertGt(price, 0);
+    }
+}
+
+/// @notice Sepolia network Aave integration tests
+contract AiETHAaveIntegrationSepolia is AiETHAaveIntegrationTests, AiETHSepoliaTest {
+    function setUp() public override(AiETHAaveIntegrationTests, AiETHSepoliaTest) {
+        AiETHSepoliaTest.setUp();
+
+        handler = new Handler(aiETH, address(reserveToken));
+
+        bytes4[] memory selectors = new bytes4[](5);
+        selectors[0] = Handler.deposit.selector;
+        selectors[1] = Handler.withdraw.selector;
+        selectors[2] = Handler.approve.selector;
+        selectors[3] = Handler.transfer.selector;
+        selectors[4] = Handler.transferFrom.selector;
+
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+        targetContract(address(handler));
+    }
+}
+
+/// @notice Base network Aave integration tests
+contract AiETHAaveIntegrationBase is AiETHAaveIntegrationTests, AiETHBaseNetworkTest {
+    function setUp() public override(AiETHAaveIntegrationTests, AiETHBaseNetworkTest) {
+        AiETHBaseNetworkTest.setUp();
+
+        handler = new Handler(aiETH, address(reserveToken));
+
+        bytes4[] memory selectors = new bytes4[](5);
+        selectors[0] = Handler.deposit.selector;
+        selectors[1] = Handler.withdraw.selector;
+        selectors[2] = Handler.approve.selector;
+        selectors[3] = Handler.transfer.selector;
+        selectors[4] = Handler.transferFrom.selector;
+
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+        targetContract(address(handler));
+    }
+
+    function _getRpcUrlKey() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (string memory) {
+        return AiETHBaseNetworkTest._getRpcUrlKey();
+    }
+
+    function _getForkBlock() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (uint256) {
+        return AiETHBaseNetworkTest._getForkBlock();
     }
 }

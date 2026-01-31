@@ -6,11 +6,14 @@ pragma solidity ^0.8.26;
 import {SymTest} from "halmos-cheatcodes/SymTest.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {AiETH} from "../../src/AiETH.sol";
-import {IERC20} from "../../src/Interfaces.sol";
+import {AiETH} from "../src/aiETH.sol";
+import {IERC20} from "../src/Interfaces.sol";
 import {AiETHBaseTest} from "./AiETHBaseTest.t.sol";
+import {AiETHSepoliaTest} from "./sepolia/AiETHSepoliaTest.t.sol";
+import {AiETHBaseNetworkTest} from "./base/AiETHBaseNetworkTest.t.sol";
 
-contract WETHSymTest is SymTest, AiETHBaseTest {
+/// @notice Abstract symbolic tests that work on any network
+abstract contract WETHSymTestBase is SymTest, AiETHBaseTest {
     function test_globalInvariants(bytes4 selector, address caller, uint256 val) public {
         // Execute an arbitrary tx
         vm.prank(caller);
@@ -336,5 +339,27 @@ contract WETHSymTest is SymTest, AiETHBaseTest {
             return bytes("");
         }
         return abi.encodePacked(selector, args);
+    }
+}
+
+/// @notice Sepolia network symbolic tests
+contract WETHSymTestSepolia is WETHSymTestBase, AiETHSepoliaTest {
+    function setUp() public override(AiETHSepoliaTest, AiETHBaseTest) {
+        AiETHSepoliaTest.setUp();
+    }
+}
+
+/// @notice Base network symbolic tests
+contract WETHSymTestBase_ is WETHSymTestBase, AiETHBaseNetworkTest {
+    function setUp() public override(AiETHBaseNetworkTest, AiETHBaseTest) {
+        AiETHBaseNetworkTest.setUp();
+    }
+
+    function _getRpcUrlKey() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (string memory) {
+        return AiETHBaseNetworkTest._getRpcUrlKey();
+    }
+
+    function _getForkBlock() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (uint256) {
+        return AiETHBaseNetworkTest._getForkBlock();
     }
 }

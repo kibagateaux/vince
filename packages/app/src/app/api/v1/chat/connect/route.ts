@@ -6,13 +6,14 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../../../lib/db';
 import {
+  getSupabase,
   getConversation,
   createMessage,
   getConversationMessages,
   updateConversationState,
-} from '@bangui/db';
+  type ConversationState,
+} from '../../../../../lib/db';
 import {
   getVinceRuntime,
   generateWelcome,
@@ -21,7 +22,7 @@ import {
 import type { UUID } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
+  const db = getSupabase();
   const { conversationId, userId } = await request.json() as {
     conversationId: UUID;
     userId: UUID;
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
       metadata: { type: 'welcome', actions: welcome.actions },
     });
 
-    await updateConversationState(db, conversationId, 'questionnaire_in_progress');
+    await updateConversationState(db, conversationId, 'questionnaire_in_progress' as ConversationState);
 
     // Re-fetch messages including welcome
     const updatedMessages = await getConversationMessages(db, conversationId);

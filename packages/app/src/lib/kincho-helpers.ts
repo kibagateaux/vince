@@ -4,7 +4,7 @@
  * Kincho has NO access to user messages
  */
 
-import type { Db } from '@bangui/db';
+import type { Db } from './db';
 import {
   createAllocationRequest,
   getAllocationRequest,
@@ -14,7 +14,7 @@ import {
   createAgentMessage,
   getAgentConversationByRequest,
   getAgentMessages,
-} from '@bangui/db';
+} from './db';
 import {
   createKinchoRuntime,
   runConsensusProcess,
@@ -119,14 +119,14 @@ export const submitAllocationRequest = async (
 
   return {
     id: request.id as UUID,
-    depositId: request.depositId as UUID | null,
-    userId: request.userId as UUID,
-    conversationId: request.conversationId as UUID | null,
+    depositId: request.deposit_id as UUID | null,
+    userId: request.user_id as UUID,
+    conversationId: request.conversation_id as UUID | null,
     amount: request.amount as string & { readonly __brand: 'BigIntString' },
     userPreferences: params.userPreferences,
     vinceRecommendation: params.vinceRecommendation,
     status: 'pending',
-    createdAt: request.createdAt.getTime() as number & { readonly __brand: 'Timestamp' },
+    createdAt: new Date(request.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
 };
 
@@ -164,14 +164,14 @@ export const processAllocationRequest = async (
   // Build allocation request object
   const request: AllocationRequest = {
     id: requestRecord.id as UUID,
-    depositId: requestRecord.depositId as UUID | null,
-    userId: requestRecord.userId as UUID,
-    conversationId: requestRecord.conversationId as UUID | null,
+    depositId: requestRecord.deposit_id as UUID | null,
+    userId: requestRecord.user_id as UUID,
+    conversationId: requestRecord.conversation_id as UUID | null,
     amount: requestRecord.amount as string & { readonly __brand: 'BigIntString' },
-    userPreferences: requestRecord.userPreferences as unknown as UserPreferences,
-    vinceRecommendation: requestRecord.vinceRecommendation as unknown as VinceRecommendation,
+    userPreferences: requestRecord.user_preferences as unknown as UserPreferences,
+    vinceRecommendation: requestRecord.vince_recommendation as unknown as VinceRecommendation,
     status: 'processing',
-    createdAt: requestRecord.createdAt.getTime() as number & { readonly __brand: 'Timestamp' },
+    createdAt: new Date(requestRecord.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
 
   // Get fund state
@@ -290,14 +290,14 @@ export const processAllocationRequestWithConsensus = async (
   // Build allocation request object
   const request: AllocationRequest = {
     id: requestRecord.id as UUID,
-    depositId: requestRecord.depositId as UUID | null,
-    userId: requestRecord.userId as UUID,
-    conversationId: requestRecord.conversationId as UUID | null,
+    depositId: requestRecord.deposit_id as UUID | null,
+    userId: requestRecord.user_id as UUID,
+    conversationId: requestRecord.conversation_id as UUID | null,
     amount: requestRecord.amount as string & { readonly __brand: 'BigIntString' },
-    userPreferences: requestRecord.userPreferences as unknown as UserPreferences,
-    vinceRecommendation: requestRecord.vinceRecommendation as unknown as VinceRecommendation,
+    userPreferences: requestRecord.user_preferences as unknown as UserPreferences,
+    vinceRecommendation: requestRecord.vince_recommendation as unknown as VinceRecommendation,
     status: 'processing',
-    createdAt: requestRecord.createdAt.getTime() as number & { readonly __brand: 'Timestamp' },
+    createdAt: new Date(requestRecord.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
 
   // Get fund state

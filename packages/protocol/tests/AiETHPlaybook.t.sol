@@ -4,11 +4,11 @@ pragma solidity ^0.8.13;
 import {CommonBase} from "forge-std/Base.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
 import {StdUtils} from "forge-std/StdUtils.sol";
+import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {AddressSet, LibAddressSet} from "../helpers/AddressSet.sol";
-import {IERC20x} from "../../src/Interfaces.sol";
-import {AiETH} from "../../src/AiETH.sol";
-import {AiETHBaseTest} from "./AiETHBaseTest.t.sol";
+import {AddressSet, LibAddressSet} from "./helpers/AddressSet.sol";
+import {IERC20x} from "../src/Interfaces.sol";
+import {AiETH} from "../src/aiETH.sol";
 
 uint256 constant ETH_SUPPLY = 120_500_000 ether;
 
@@ -18,8 +18,13 @@ contract ForcePush {
     }
 }
 
-contract Handler is AiETHBaseTest {
+/// @notice Handler contract for invariant testing. Takes AiETH and reserveToken
+/// directly as constructor arguments rather than inheriting network-specific setup.
+contract Handler is Test {
     using LibAddressSet for AddressSet;
+
+    AiETH public aiETH;
+    IERC20x public reserveToken;
 
     uint256 public ghost_depositSum;
     uint256 public ghost_withdrawSum;
@@ -51,19 +56,25 @@ contract Handler is AiETHBaseTest {
         _;
     }
 
-    constructor(AiETH _weth, address reserveToken) {
+    constructor(AiETH _weth, address _reserveToken) {
         aiETH = _weth;
-        token = reserveToken;
-        deal(address(reserveToken), address(this), ETH_SUPPLY);
+        token = _reserveToken;
+        reserveToken = IERC20x(_reserveToken);
+        // Give handler enough tokens to distribute
+        deal(_reserveToken, address(this), ETH_SUPPLY);
     }
 
     function deposit(uint256 amount) public createActor countCall("deposit") {
-        amount = bound(amount, 0, address(this).balance);
-        _pay(currentActor, amount);
+        uint256 handlerBalance = IERC20x(token).balanceOf(address(this));
+        amount = bound(amount, aiETH.MIN_DEPOSIT(), handlerBalance > aiETH.MIN_DEPOSIT() ? handlerBalance : aiETH.MIN_DEPOSIT());
 
-        vm.prank(currentActor);
-        WETH.deposit{value: amount}();
+        // Transfer tokens to actor
+        IERC20x(token).transfer(currentActor, amount);
+
+        vm.startPrank(currentActor);
+        IERC20x(token).approve(address(aiETH), amount);
         aiETH.deposit(amount);
+        vm.stopPrank();
 
         ghost_depositSum += amount;
     }
@@ -74,7 +85,9 @@ contract Handler is AiETHBaseTest {
 
         vm.startPrank(currentActor);
         aiETH.withdraw(amount);
-        _pay(address(this), amount);
+        // After withdrawal, tokens go directly to the actor from Aave
+        // Transfer back to handler for future deposits
+        IERC20x(token).transfer(address(this), IERC20x(token).balanceOf(currentActor));
         vm.stopPrank();
 
         ghost_withdrawSum += amount;
@@ -127,14 +140,10 @@ contract Handler is AiETHBaseTest {
         aiETH.transferFrom(from, to, amount);
     }
 
-    function sendFallback(uint256 amount) public createActor countCall("sendFallback") {
-        amount = bound(amount, 0, address(this).balance);
-        _pay(currentActor, amount);
-
-        vm.prank(currentActor);
-        _pay(address(aiETH), amount);
-
-        ghost_depositSum += amount;
+    // sendFallback is only applicable for native ETH deposits (WETH)
+    // For ERC20 tokens like WBTC, this is a no-op
+    function sendFallback(uint256) public createActor countCall("sendFallback") {
+        // No-op for ERC20 tokens
     }
 
     // TODO test functionality on aiETH + nnUSDC

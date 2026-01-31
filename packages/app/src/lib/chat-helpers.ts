@@ -2,7 +2,7 @@
  * Chat helpers shared across chat API routes
  */
 
-import type { Db } from '@bangui/db';
+import type { Db } from './db';
 import {
   getConversation,
   createMessage,
@@ -12,7 +12,9 @@ import {
   saveQuestionnaireResponse,
   getUserProfile,
   getStoriesByCauseCategories,
-} from '@bangui/db';
+  type ConversationState,
+  type MessageRow,
+} from './db';
 import {
   getNextQuestion,
   isQuestionnaireComplete,
@@ -108,13 +110,7 @@ const parseDepositFromAIResponse = (
  * Format database messages for client consumption
  */
 export const formatMessagesForClient = (
-  messages: Array<{
-    id: string;
-    sender: string;
-    content: string;
-    metadata: unknown;
-    sentAt: Date;
-  }>
+  messages: MessageRow[]
 ): Array<{
   id: string;
   sender: string;
@@ -129,7 +125,7 @@ export const formatMessagesForClient = (
       sender: m.sender,
       content: m.content,
       actions: metadata?.actions,
-      timestamp: m.sentAt.getTime(),
+      timestamp: new Date(m.sent_at).getTime(),
     };
   });
 };
@@ -139,11 +135,11 @@ export const formatMessagesForClient = (
  */
 export const generateWelcome = async (
   db: Db,
-  userId: UUID,
+  userId: string,
   vinceRuntime: VinceRuntime | null
 ): Promise<{ content: string; actions?: readonly ActionPrompt[] }> => {
   const responses = await getQuestionnaireResponses(db, userId);
-  const answeredIds = new Set(responses.map((r) => r.questionId));
+  const answeredIds = new Set(responses.map((r) => r.question_id));
   const nextQ = getNextQuestion(answeredIds);
 
   let welcome: string;
@@ -184,8 +180,8 @@ Before we dive in, I'd love to learn a bit about what matters to you. I have a f
  */
 export const processMessage = async (
   db: Db,
-  userId: UUID,
-  conversationId: UUID,
+  userId: string,
+  conversationId: string,
   content: string,
   state: string,
   vinceRuntime: VinceRuntime | null,
@@ -197,7 +193,7 @@ export const processMessage = async (
   let questionBeingAnswered = questionId;
   if (!questionBeingAnswered && state === 'questionnaire_in_progress') {
     const existingResponses = await getQuestionnaireResponses(db, userId);
-    const answeredIds = new Set(existingResponses.map((r) => r.questionId));
+    const answeredIds = new Set(existingResponses.map((r) => r.question_id));
     const currentQ = getNextQuestion(answeredIds);
     questionBeingAnswered = currentQ?.id;
   }
@@ -250,7 +246,7 @@ export const processMessage = async (
 
   return {
     type: 'response',
-    conversationId,
+    conversationId: conversationId as UUID,
     agent: 'vince',
     content: defaultContent,
   };
@@ -261,14 +257,14 @@ export const processMessage = async (
  */
 const handleQuestionnaireResponse = async (
   db: Db,
-  userId: UUID,
-  conversationId: UUID,
+  userId: string,
+  conversationId: string,
   content: string,
   messageTimestamp: number,
   vinceRuntime: VinceRuntime | null
 ): Promise<AgentResponse> => {
   const existingResponses = await getQuestionnaireResponses(db, userId);
-  const answeredIds = new Set(existingResponses.map((r) => r.questionId));
+  const answeredIds = new Set(existingResponses.map((r) => r.question_id));
   const currentQuestion = getNextQuestion(answeredIds);
 
   // Save questionnaire response
@@ -289,14 +285,26 @@ const handleQuestionnaireResponse = async (
   if (!nextQ || isQuestionnaireComplete(answeredIds)) {
     const allResponses = await getQuestionnaireResponses(db, userId);
     const analysis = analyzeResponses(
-      userId,
-      allResponses.map((r) => ({ questionId: r.questionId, response: r.response }))
+      userId as UUID,
+      allResponses.map((r) => ({ questionId: r.question_id, response: r.response }))
     );
 
     const topCauses = analysis.causeAffinities.slice(0, 3).map((a) => a.causeId);
-    const stories = await getStoriesByCauseCategories(db, topCauses, 3);
+    const storiesRaw = await getStoriesByCauseCategories(db, topCauses, 3);
+    // Map to camelCase for compatibility with existing code
+    const stories = storiesRaw.map((s) => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      causeCategory: s.cause_category,
+      impactMetrics: s.impact_metrics,
+      minInvestment: s.min_investment,
+      riskLevel: s.risk_level,
+      createdAt: s.created_at,
+      active: s.active,
+    }));
 
-    await updateConversationState(db, conversationId, 'investment_suggestions');
+    await updateConversationState(db, conversationId, 'investment_suggestions' as ConversationState);
 
     const archetypeDescriptions: Record<string, string> = {
       impact_maximizer: 'an Impact Maximizer - you value measurable outcomes and data-driven giving',
@@ -374,7 +382,7 @@ Would you like to learn more about any of these, or explore other options?`;
 
     return {
       type: 'response',
-      conversationId,
+      conversationId: conversationId as UUID,
       agent: 'vince',
       content: responseContent,
       actions: completionActions,
@@ -416,7 +424,7 @@ Would you like to learn more about any of these, or explore other options?`;
 
   return {
     type: 'response',
-    conversationId,
+    conversationId: conversationId as UUID,
     agent: 'vince',
     content: nextQuestionResponse,
     actions: nextQActions,
@@ -467,7 +475,7 @@ const parseDepositIntent = (content: string): { amount: string; token: string } 
  */
 const generateAIResponse = async (
   db: Db,
-  conversationId: UUID,
+  conversationId: string,
   userMessage: string,
   vinceRuntime: VinceRuntime | null,
   state: 'investing' | 'persuading'
@@ -484,12 +492,12 @@ const generateAIResponse = async (
       }));
 
       // Fetch available stories for context
-      const stories = await getStoriesByCauseCategories(db, ['climate', 'education', 'health', 'social']);
-      const storiesContext = stories.map(s => ({
+      const storiesRaw = await getStoriesByCauseCategories(db, ['climate', 'education', 'health', 'social']);
+      const storiesContext = storiesRaw.map(s => ({
         title: s.title,
         description: s.description ?? '',
-        causeCategory: s.causeCategory,
-        minInvestment: String(s.minInvestment),
+        causeCategory: s.cause_category,
+        minInvestment: String(s.min_investment),
       }));
 
       responseContent = await vinceRuntime.generateResponse({
@@ -542,8 +550,8 @@ const generateAIResponse = async (
  */
 const handleInvestmentQuery = async (
   db: Db,
-  userId: UUID,
-  conversationId: UUID,
+  userId: string,
+  conversationId: string,
   content: string,
   vinceRuntime: VinceRuntime | null
 ): Promise<AgentResponse> => {
@@ -580,7 +588,7 @@ Click the button below to review and sign the transaction. Your funds will be al
 
     return {
       type: 'response',
-      conversationId,
+      conversationId: conversationId as UUID,
       agent: 'vince',
       content: responseContent,
       actions: depositActions,
@@ -600,7 +608,7 @@ Click the button below to review and sign the transaction. Your funds will be al
 
   return {
     type: 'response',
-    conversationId,
+    conversationId: conversationId as UUID,
     agent: 'vince',
     content: aiResponse.content,
     actions: aiResponse.actions,

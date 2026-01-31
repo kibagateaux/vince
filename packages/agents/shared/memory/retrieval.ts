@@ -3,19 +3,47 @@
  * Memory retrieval utilities for agents
  */
 
-import {
-  searchSimilarMemories,
-  getAgentMemories,
-  storeMemory,
-  type AgentMemory,
-  type AgentMemoryType,
-  type MemorySearchResult,
-  type StoreMemoryInput,
-} from '@bangui/db';
+import { storeMemory, retrieveSimilarMemories } from '../db/index.js';
 import { generateEmbedding } from './embedding.js';
 
+export type AgentMemoryType =
+  | 'allocation_decision'
+  | 'user_preference'
+  | 'risk_assessment'
+  | 'negotiation_history'
+  | 'clarification'
+  | 'escalation';
+
+export interface AgentMemory {
+  id: string;
+  agentId: string;
+  userId?: string;
+  conversationId?: string;
+  allocationRequestId?: string;
+  content: string;
+  memoryType: AgentMemoryType;
+  importance: number;
+  metadata?: Record<string, unknown>;
+  createdAt: Date;
+}
+
+export interface MemorySearchResult extends AgentMemory {
+  similarity: number;
+}
+
+export interface StoreMemoryInput {
+  agentId: string;
+  userId?: string;
+  conversationId?: string;
+  allocationRequestId?: string;
+  content: string;
+  memoryType: AgentMemoryType;
+  importance?: number;
+  metadata?: Record<string, unknown>;
+}
+
 export interface RetrievalOptions {
-  agentId?: AgentMemory['agentId'];
+  agentId?: string;
   userId?: string;
   conversationId?: string;
   memoryType?: AgentMemoryType;
@@ -32,16 +60,27 @@ export async function searchMemories(
 ): Promise<MemorySearchResult[]> {
   const embedding = await generateEmbedding(query);
 
-  return searchSimilarMemories(embedding, {
-    threshold: options.threshold ?? 0.6,
+  if (!options.agentId) {
+    return [];
+  }
+
+  const results = await retrieveSimilarMemories(options.agentId, embedding, {
     limit: options.limit ?? 10,
-    filters: {
-      agentId: options.agentId,
-      userId: options.userId,
-      conversationId: options.conversationId,
-      memoryType: options.memoryType,
-    },
+    threshold: options.threshold ?? 0.6,
+    memoryTypes: options.memoryType ? [options.memoryType] : undefined,
+    userId: options.userId,
   });
+
+  return results.map((r) => ({
+    id: r.id,
+    agentId: options.agentId!,
+    content: r.content,
+    memoryType: r.memoryType as AgentMemoryType,
+    importance: r.importance,
+    similarity: r.similarity,
+    metadata: r.metadata,
+    createdAt: new Date(),
+  }));
 }
 
 /**
@@ -50,26 +89,57 @@ export async function searchMemories(
 export async function rememberWithEmbedding(
   input: StoreMemoryInput
 ): Promise<AgentMemory> {
-  const embedding = await generateEmbedding(input.content);
-
-  return storeMemory({
-    ...input,
-    embedding,
+  // For now, just store without embedding - vector search requires pgvector setup
+  const result = await storeMemory({
+    agentId: input.agentId,
+    userId: input.userId,
+    conversationId: input.conversationId,
+    allocationRequestId: input.allocationRequestId,
+    content: input.content,
+    memoryType: input.memoryType,
+    importance: input.importance,
+    metadata: input.metadata,
   });
+
+  return {
+    id: result.id,
+    agentId: input.agentId,
+    userId: input.userId,
+    conversationId: input.conversationId,
+    allocationRequestId: input.allocationRequestId,
+    content: input.content,
+    memoryType: input.memoryType,
+    importance: input.importance ?? 0.5,
+    metadata: input.metadata,
+    createdAt: new Date(),
+  };
 }
 
 /**
  * Get recent memories for an agent (without semantic search)
  */
 export async function getRecentMemories(
-  agentId: AgentMemory['agentId'],
+  agentId: string,
   options: {
     userId?: string;
     conversationId?: string;
     limit?: number;
   } = {}
 ): Promise<AgentMemory[]> {
-  return getAgentMemories(agentId, options);
+  const results = await retrieveSimilarMemories(agentId, [], {
+    limit: options.limit ?? 10,
+    userId: options.userId,
+  });
+
+  return results.map((r) => ({
+    id: r.id,
+    agentId,
+    content: r.content,
+    memoryType: r.memoryType as AgentMemoryType,
+    importance: r.importance,
+    metadata: r.metadata,
+    createdAt: new Date(),
+  }));
 }
 
 /**
