@@ -5,10 +5,13 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 
-import {Handler, ETH_SUPPLY} from "./FunEthPlaybook.t.sol";
+import {Handler, ETH_SUPPLY} from "./AiETHPlaybook.t.sol";
 import {AiETHBaseTest} from "./AiETHBaseTest.t.sol";
+import {AiETHSepoliaTest} from "./sepolia/AiETHSepoliaTest.t.sol";
+import {AiETHBaseNetworkTest} from "./base/AiETHBaseNetworkTest.t.sol";
 
-contract nnEthInvariants is AiETHBaseTest {
+/// @notice Abstract invariant tests that work on any network
+abstract contract nnEthInvariantsTests is AiETHBaseTest {
     Handler public handler;
 
     function setUp() public virtual override {
@@ -74,5 +77,51 @@ contract nnEthInvariants is AiETHBaseTest {
 
     function invariant_callSummary() public view {
         handler.callSummary();
+    }
+}
+
+/// @notice Sepolia network invariant tests
+contract nnEthInvariantsSepolia is nnEthInvariantsTests, AiETHSepoliaTest {
+    function setUp() public override(nnEthInvariantsTests, AiETHSepoliaTest) {
+        AiETHSepoliaTest.setUp();
+
+        handler = new Handler(aiETH, address(reserveToken));
+
+        bytes4[] memory selectors = new bytes4[](5);
+        selectors[0] = Handler.deposit.selector;
+        selectors[1] = Handler.withdraw.selector;
+        selectors[2] = Handler.approve.selector;
+        selectors[3] = Handler.transfer.selector;
+        selectors[4] = Handler.transferFrom.selector;
+
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+        targetContract(address(handler));
+    }
+}
+
+/// @notice Base network invariant tests
+contract nnEthInvariantsBase is nnEthInvariantsTests, AiETHBaseNetworkTest {
+    function setUp() public override(nnEthInvariantsTests, AiETHBaseNetworkTest) {
+        AiETHBaseNetworkTest.setUp();
+
+        handler = new Handler(aiETH, address(reserveToken));
+
+        bytes4[] memory selectors = new bytes4[](5);
+        selectors[0] = Handler.deposit.selector;
+        selectors[1] = Handler.withdraw.selector;
+        selectors[2] = Handler.approve.selector;
+        selectors[3] = Handler.transfer.selector;
+        selectors[4] = Handler.transferFrom.selector;
+
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+        targetContract(address(handler));
+    }
+
+    function _getRpcUrlKey() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (string memory) {
+        return AiETHBaseNetworkTest._getRpcUrlKey();
+    }
+
+    function _getForkBlock() internal pure override(AiETHBaseNetworkTest, AiETHBaseTest) returns (uint256) {
+        return AiETHBaseNetworkTest._getForkBlock();
     }
 }
