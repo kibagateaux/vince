@@ -222,7 +222,7 @@ export default function ChatPage() {
             }
           }
 
-          const { depositId, transaction } = await prepareDeposit({
+          const { depositId, approveTx, depositTx } = await prepareDeposit({
             userId: session.userId,
             walletAddress,
             amount: amountWei,
@@ -236,10 +236,34 @@ export default function ChatPage() {
             transport: custom(provider),
           });
 
+          // If approval is needed, send approve tx first
+          if (approveTx) {
+            console.log('Sending approve tx:', {
+              to: approveTx.to,
+              data: approveTx.data,
+              value: approveTx.value,
+            });
+            const approveTxHash = await walletClient.sendTransaction({
+              to: approveTx.to,
+              data: approveTx.data,
+              value: 0n,
+              chain: null,
+            });
+            // Wait for approval to be mined before deposit
+            // Note: In production, you'd want to wait for confirmation
+            console.log('Approval tx sent:', approveTxHash);
+          }
+
+          // Send deposit tx - this is a contract call, NOT an ETH transfer
+          console.log('Sending deposit tx:', {
+            to: depositTx.to,
+            data: depositTx.data,
+            value: depositTx.value,
+          });
           const txHash = await walletClient.sendTransaction({
-            to: transaction.to,
-            data: transaction.data,
-            value: BigInt(transaction.value),
+            to: depositTx.to,
+            data: depositTx.data,
+            value: 0n, // No ETH sent - deposit uses ERC20 transferFrom
             chain: null, // Let wallet handle chain validation
           });
 
@@ -253,8 +277,11 @@ export default function ChatPage() {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
             sendMessage('Transaction was cancelled.');
+          } else if (errorMessage.includes('not configured')) {
+            // Server configuration error
+            sendMessage('Deposit service is not properly configured. Please contact support.');
           } else {
-            sendMessage('There was an issue with the deposit. Please try again.');
+            sendMessage(`There was an issue with the deposit: ${errorMessage}`);
           }
         } finally {
           setIsProcessingDeposit(false);

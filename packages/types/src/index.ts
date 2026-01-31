@@ -333,7 +333,10 @@ export interface UnsignedTransaction {
 /** Deposit prepare response */
 export interface DepositPrepareResponse {
   readonly depositId: UUID;
-  readonly transaction: UnsignedTransaction;
+  /** Approval transaction - required if user hasn't approved the vault to spend their tokens */
+  readonly approveTx: UnsignedTransaction | null;
+  /** Deposit transaction */
+  readonly depositTx: UnsignedTransaction;
   readonly simulation: TransactionSimulation;
 }
 
