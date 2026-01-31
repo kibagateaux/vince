@@ -38,8 +38,9 @@ export const DEFAULT_CHAIN_ID = parseInt(
 
 /**
  * Default RPC URL from environment variable.
+ * Falls back to publicnode which has no rate limits (unlike Alchemy demo).
  */
-export const DEFAULT_RPC_URL = process.env.NEXT_PUBLIC_DEFAULT_RPC_URL ?? 'https://eth-sepolia.g.alchemy.com/v2/demo';
+export const DEFAULT_RPC_URL = process.env.NEXT_PUBLIC_DEFAULT_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com';
 
 /**
  * Get the default chain configuration.

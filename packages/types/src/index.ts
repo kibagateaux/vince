@@ -67,13 +67,13 @@ export const CHAIN_DISPLAY_NAMES: Record<Chain, string> = {
   [Chain.BASE_SEPOLIA]: 'Base Sepolia',
 } as const;
 
-/** Default RPC URLs for each chain */
+/** Default RPC URLs for each chain (public endpoints with no rate limits) */
 export const CHAIN_RPC_URLS: Record<Chain, string> = {
   [Chain.ETHEREUM]: 'https://eth.llamarpc.com',
   [Chain.POLYGON]: 'https://polygon.llamarpc.com',
   [Chain.ARBITRUM]: 'https://arb1.arbitrum.io/rpc',
   [Chain.BASE]: 'https://mainnet.base.org',
-  [Chain.SEPOLIA]: 'https://eth-sepolia.g.alchemy.com/v2/demo',
+  [Chain.SEPOLIA]: 'https://ethereum-sepolia-rpc.publicnode.com',
   [Chain.BASE_SEPOLIA]: 'https://sepolia.base.org',
 } as const;
 
