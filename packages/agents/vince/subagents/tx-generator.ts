@@ -4,8 +4,12 @@
  * @see {@link @bangui/types#UnsignedTransaction}
  */
 
-import type {
+import {
   Chain,
+  CHAIN_NAME_TO_ID,
+  getChainId as getChainIdFromName,
+} from '@bangui/types';
+import type {
   Address,
   BigIntString,
   UnsignedTransaction,
@@ -16,20 +20,14 @@ import type {
 // Constants
 // ============================================================================
 
-/** Chain ID mapping */
-const CHAIN_IDS: Record<Chain, number> = {
-  ethereum: 1,
-  polygon: 137,
-  arbitrum: 42161,
-  base: 8453,
-};
-
 /** Default gas estimates by chain */
 const DEFAULT_GAS_ESTIMATES: Record<Chain, BigIntString> = {
-  ethereum: '100000' as BigIntString,
-  polygon: '150000' as BigIntString,
-  arbitrum: '200000' as BigIntString,
-  base: '100000' as BigIntString,
+  [Chain.ETHEREUM]: '100000' as BigIntString,
+  [Chain.POLYGON]: '150000' as BigIntString,
+  [Chain.ARBITRUM]: '200000' as BigIntString,
+  [Chain.BASE]: '100000' as BigIntString,
+  [Chain.SEPOLIA]: '100000' as BigIntString,
+  [Chain.BASE_SEPOLIA]: '100000' as BigIntString,
 };
 
 /** deposit(address,uint256) function selector */
@@ -44,7 +42,7 @@ const DEPOSIT_SELECTOR = '0x47e7ef24';
  * @param chain - Chain identifier
  * @returns EVM chain ID
  */
-export const getChainId = (chain: Chain): number => CHAIN_IDS[chain];
+export const getChainId = (chain: Chain): number => getChainIdFromName(chain);
 
 /**
  * Pads hex string to 32 bytes (64 chars)

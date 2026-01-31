@@ -9,11 +9,19 @@ import { FC, useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { createWalletClient, custom, type Chain as ViemChain } from 'viem';
-import { mainnet, sepolia, polygon, arbitrum, base } from 'viem/chains';
 import { useChat } from '../hooks/useChat';
 import { useVinceState } from '../hooks/useVinceState';
 import { connectSession, prepareDeposit, confirmDeposit } from '../lib/api';
 import { Message } from '../components/Message';
+import {
+  CHAIN_MAP,
+  CHAIN_ID_TO_NAME,
+  DEFAULT_CHAIN_ID,
+  getDefaultChain,
+  getDefaultChainName,
+  isDefaultChain,
+  getChainDisplayName,
+} from '../lib/chains';
 import type { ActionPrompt, Chain, BigIntString } from '@bangui/types';
 import type { Session } from '../lib/types';
 
@@ -68,8 +76,13 @@ export default function ChatPage() {
   const [isProcessingDeposit, setIsProcessingDeposit] = useState(false);
   const [depositConfirmed, setDepositConfirmed] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+  const [currentChainId, setCurrentChainId] = useState<number | null>(null);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Check if user is on the wrong network
+  const isWrongNetwork = currentChainId !== null && !isDefaultChain(currentChainId);
 
   // Get last message sender
   const lastMessage = messages[messages.length - 1];
@@ -103,6 +116,41 @@ export default function ChatPage() {
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Detect current chain when wallet connects
+  useEffect(() => {
+    const detectChain = async () => {
+      if (!authenticated || wallets.length === 0) {
+        setCurrentChainId(null);
+        return;
+      }
+
+      const wallet = wallets.find(w => w.address === user?.wallet?.address) ?? wallets[0];
+      if (!wallet) return;
+
+      try {
+        const provider = await wallet.getEthereumProvider();
+        const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
+        const chainId = parseInt(chainIdHex, 16);
+        setCurrentChainId(chainId);
+
+        // Listen for chain changes
+        const handleChainChanged = (newChainIdHex: unknown) => {
+          if (typeof newChainIdHex === 'string') {
+            setCurrentChainId(parseInt(newChainIdHex, 16));
+          }
+        };
+        provider.on('chainChanged', handleChainChanged as Parameters<typeof provider.on>[1]);
+        return () => {
+          provider.removeListener('chainChanged', handleChainChanged as Parameters<typeof provider.removeListener>[1]);
+        };
+      } catch (error) {
+        console.error('Failed to detect chain:', error);
+      }
+    };
+
+    detectChain();
+  }, [authenticated, wallets, user?.wallet?.address]);
+
   // Connect when authenticated
   useEffect(() => {
     const initSession = async () => {
@@ -129,11 +177,12 @@ export default function ChatPage() {
     (e: React.FormEvent) => {
       e.preventDefault();
       if (!input.trim()) return;
-      sendMessage(input.trim());
+      // Pass current chain ID so Vince can filter vaults appropriately
+      sendMessage(input.trim(), currentChainId ?? undefined);
       setInput('');
       setSelectedOptions(new Set());
     },
-    [input, sendMessage]
+    [input, sendMessage, currentChainId]
   );
 
   const handleToggleOption = useCallback(
@@ -152,23 +201,65 @@ export default function ChatPage() {
     []
   );
 
+  const handleSwitchNetwork = useCallback(async () => {
+    const wallet = wallets.find(w => w.address === user?.wallet?.address) ?? wallets[0];
+    if (!wallet) return;
+
+    setIsSwitchingNetwork(true);
+    try {
+      const provider = await wallet.getEthereumProvider();
+      const defaultChain = getDefaultChain();
+
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${DEFAULT_CHAIN_ID.toString(16)}` }],
+        });
+      } catch (switchError: unknown) {
+        const error = switchError as { code?: number };
+        // Chain not added to wallet - try to add it
+        if (error.code === 4902) {
+          await provider.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: `0x${DEFAULT_CHAIN_ID.toString(16)}`,
+              chainName: defaultChain.name,
+              nativeCurrency: defaultChain.nativeCurrency,
+              rpcUrls: [defaultChain.rpcUrls.default.http[0]],
+              blockExplorerUrls: defaultChain.blockExplorers
+                ? [defaultChain.blockExplorers.default.url]
+                : undefined,
+            }],
+          });
+        } else {
+          throw switchError;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to switch network:', error);
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  }, [wallets, user?.wallet?.address]);
+
   const handleAction = useCallback(
     async (action: ActionPrompt) => {
       if (action.type === 'deposit' && session && user?.wallet?.address) {
-        const { amount, token, chain } = action.data as {
+        const { amount, token, chain, chainId: actionChainId } = action.data as {
           amount?: string;
           token?: string;
           chain?: Chain;
+          chainId?: number;
         };
 
         if (!amount || !token) {
-          sendMessage('I want to make a deposit');
+          sendMessage('I want to make a deposit', currentChainId ?? undefined);
           return;
         }
 
         const wallet = wallets.find(w => w.address === user.wallet?.address);
         if (!wallet) {
-          sendMessage('Could not find connected wallet. Please reconnect.');
+          sendMessage('Could not find connected wallet. Please reconnect.', currentChainId ?? undefined);
           return;
         }
 
@@ -181,44 +272,61 @@ export default function ChatPage() {
           // Detect connected chain first
           const provider = await wallet.getEthereumProvider();
           const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
-          const currentChainId = parseInt(chainIdHex, 16);
+          const connectedChainId = parseInt(chainIdHex, 16);
 
-          const chainMap: Record<number, ViemChain> = {
-            1: mainnet,
-            11155111: sepolia,
-            137: polygon,
-            42161: arbitrum,
-            8453: base,
-          };
+          // Determine target chain - use action chainId, then chain name, then connected chain
+          let targetChainId: number;
+          let targetChainName: Chain;
 
-          // Map chain ID to chain name for API
-          const chainIdToName: Record<number, Chain> = {
-            1: 'ethereum',
-            137: 'polygon',
-            42161: 'arbitrum',
-            8453: 'base',
-          };
+          if (actionChainId) {
+            // Use the chainId from the action (set by backend based on vault)
+            targetChainId = actionChainId;
+            targetChainName = CHAIN_ID_TO_NAME[actionChainId] ?? getDefaultChainName();
+          } else if (chain) {
+            // Use chain name from action
+            targetChainName = chain;
+            const foundId = Object.entries(CHAIN_ID_TO_NAME).find(([, name]) => name === chain)?.[0];
+            targetChainId = foundId ? Number(foundId) : DEFAULT_CHAIN_ID;
+          } else {
+            // Fall back to connected chain or default
+            targetChainId = connectedChainId;
+            targetChainName = CHAIN_ID_TO_NAME[connectedChainId] ?? getDefaultChainName();
+          }
 
-          // Determine target chain - use requested chain or connected chain
-          const targetChainName = chain ?? chainIdToName[currentChainId] ?? 'ethereum';
-          const targetChainId = Object.entries(chainIdToName).find(([, name]) => name === targetChainName)?.[0];
-          const targetChain = targetChainId ? chainMap[Number(targetChainId)] : mainnet;
+          const targetChain = CHAIN_MAP[targetChainId] ?? getDefaultChain();
+          const targetChainDisplayName = getChainDisplayName(targetChainId);
 
           // Switch chain if needed
-          if (currentChainId !== Number(targetChainId)) {
+          if (connectedChainId !== targetChainId) {
             try {
               await provider.request({
                 method: 'wallet_switchEthereumChain',
-                params: [{ chainId: `0x${Number(targetChainId).toString(16)}` }],
+                params: [{ chainId: `0x${targetChainId.toString(16)}` }],
               });
             } catch (switchError: unknown) {
               const error = switchError as { code?: number };
-              // Chain not added to wallet - add it
+              // Chain not added to wallet - try to add it
               if (error.code === 4902) {
-                sendMessage(`Please add ${targetChainName} network to your wallet and try again.`);
-                return;
+                try {
+                  await provider.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [{
+                      chainId: `0x${targetChainId.toString(16)}`,
+                      chainName: targetChain.name,
+                      nativeCurrency: targetChain.nativeCurrency,
+                      rpcUrls: [targetChain.rpcUrls.default.http[0]],
+                      blockExplorerUrls: targetChain.blockExplorers
+                        ? [targetChain.blockExplorers.default.url]
+                        : undefined,
+                    }],
+                  });
+                } catch (addError) {
+                  sendMessage(`Please add ${targetChainDisplayName} network to your wallet and try again.`, currentChainId ?? undefined);
+                  return;
+                }
+              } else {
+                throw switchError;
               }
-              throw switchError;
             }
           }
 
@@ -246,22 +354,22 @@ export default function ChatPage() {
           if (txHash) {
             await confirmDeposit(depositId, txHash);
             setDepositConfirmed(true);
-            sendMessage(`My deposit of ${amount} ${token} was confirmed! Transaction: ${txHash}`);
+            sendMessage(`My deposit of ${amount} ${token} on ${targetChainDisplayName} was confirmed! Transaction: ${txHash}`, targetChainId);
           }
         } catch (error) {
           console.error('Deposit failed:', error);
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
-            sendMessage('Transaction was cancelled.');
+            sendMessage('Transaction was cancelled.', currentChainId ?? undefined);
           } else {
-            sendMessage('There was an issue with the deposit. Please try again.');
+            sendMessage('There was an issue with the deposit. Please try again.', currentChainId ?? undefined);
           }
         } finally {
           setIsProcessingDeposit(false);
         }
       }
     },
-    [session, user, wallets, sendMessage]
+    [session, user, wallets, sendMessage, currentChainId]
   );
 
   // Show login if not authenticated
@@ -330,6 +438,30 @@ export default function ChatPage() {
             </div>
           </div>
         </header>
+
+        {/* Network Warning Banner */}
+        {isWrongNetwork && (
+          <div className="mx-4 mt-2 p-3 rounded-xl bg-amber-500/20 border border-amber-400/30 backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span className="text-sm text-amber-100">
+                  Connected to {currentChainId ? getChainDisplayName(currentChainId) : 'unknown network'}.
+                  Please switch to {getChainDisplayName(DEFAULT_CHAIN_ID)}.
+                </span>
+              </div>
+              <button
+                onClick={handleSwitchNetwork}
+                disabled={isSwitchingNetwork}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-amber-500/40 hover:bg-amber-500/60 rounded-lg border border-amber-400/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                {isSwitchingNetwork ? 'Switching...' : 'Switch Network'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <main
