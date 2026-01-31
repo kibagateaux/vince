@@ -8,13 +8,15 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http, type Chain as ViemChain } from 'viem';
-import { mainnet, polygon, arbitrum, base } from 'viem/chains';
+import { mainnet, polygon, arbitrum, base, sepolia, baseSepolia } from 'viem/chains';
 import {
   getSupabase,
   findOrCreateWallet,
   createDeposit,
 } from '../../../../../lib/db';
 import { prepareDepositTransactions, simulateTx } from '@bangui/agents';
+import { getPrimaryVault } from '../../../../../lib/vaults';
+import { DEFAULT_RPC_URL } from '../../../../../lib/chains';
 import type {
   DepositPrepareRequest,
   DepositPrepareResponse,
@@ -40,21 +42,14 @@ const CHAIN_CONFIG: Record<Chain, { chain: ViemChain; rpcEnvVar: string }> = {
   polygon: { chain: polygon, rpcEnvVar: 'POLYGON_RPC_URL' },
   arbitrum: { chain: arbitrum, rpcEnvVar: 'ARB_RPC_URL' },
   base: { chain: base, rpcEnvVar: 'BASE_RPC_URL' },
+  sepolia: { chain: sepolia, rpcEnvVar: 'NEXT_PUBLIC_DEFAULT_RPC_URL' },
+  base_sepolia: { chain: baseSepolia, rpcEnvVar: 'BASE_SEPOLIA_RPC_URL' },
 };
 
 export async function POST(request: NextRequest) {
   const db = getSupabase();
   const body: DepositPrepareRequest & { walletAddress: Address } = await request.json();
   const { userId, amount, token, chain, walletAddress } = body;
-
-  // Validate required env vars
-  const contractAddress = process.env.DAF_CONTRACT_ADDRESS as Address | undefined;
-  if (!contractAddress) {
-    return NextResponse.json(
-      { error: 'DAF_CONTRACT_ADDRESS environment variable is not configured' },
-      { status: 500 }
-    );
-  }
 
   // Get chain config and RPC URL
   const chainConfig = CHAIN_CONFIG[chain];
@@ -65,7 +60,28 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const rpcUrl = process.env[chainConfig.rpcEnvVar];
+  // Get vault for this chain (uses chain-specific env vars like NEXT_PUBLIC_DAF_CONTRACT_SEPOLIA)
+  const vault = getPrimaryVault(chain);
+  if (!vault) {
+    return NextResponse.json(
+      { error: `No vault configured for chain: ${chain}` },
+      { status: 400 }
+    );
+  }
+
+  const contractAddress = vault.address;
+  if (!contractAddress || contractAddress === '0x0000000000000000000000000000000000000000') {
+    return NextResponse.json(
+      { error: `Vault contract not deployed for ${chain}. Check NEXT_PUBLIC_DAF_CONTRACT_* env vars.` },
+      { status: 500 }
+    );
+  }
+
+  // Get RPC URL - use default for testnets if specific one not set
+  let rpcUrl = process.env[chainConfig.rpcEnvVar];
+  if (!rpcUrl && (chain === 'sepolia' || chain === 'base_sepolia')) {
+    rpcUrl = DEFAULT_RPC_URL;
+  }
   if (!rpcUrl) {
     return NextResponse.json(
       { error: `RPC URL not configured for ${chain}. Set ${chainConfig.rpcEnvVar}` },
@@ -82,15 +98,17 @@ export async function POST(request: NextRequest) {
   // Read reserve token address from the vault contract
   let reserveTokenAddress: Address;
   try {
+    console.log(`[deposits/prepare] Reading reserveToken from vault ${contractAddress} on ${chain}`);
     reserveTokenAddress = await publicClient.readContract({
       address: contractAddress,
       abi: aiETHAbi,
       functionName: 'reserveToken',
     });
+    console.log(`[deposits/prepare] Vault reserveToken: ${reserveTokenAddress}`);
   } catch (error) {
-    console.error('Failed to read reserveToken from vault:', error);
+    console.error('[deposits/prepare] Failed to read reserveToken from vault:', error);
     return NextResponse.json(
-      { error: 'Failed to read reserve token from vault contract. Is the contract deployed?' },
+      { error: `Failed to read reserve token from vault at ${contractAddress} on ${chain}. Is the contract deployed?` },
       { status: 500 }
     );
   }
@@ -120,6 +138,13 @@ export async function POST(request: NextRequest) {
 
   // Simulate deposit tx
   const simulation = await simulateTx(depositTx);
+
+  console.log(`[deposits/prepare] Built transactions:`, {
+    approveTxTo: approveTx?.to,
+    depositTxTo: depositTx.to,
+    vaultAddress: contractAddress,
+    reserveToken: reserveTokenAddress,
+  });
 
   const response: DepositPrepareResponse = {
     depositId: deposit.id as UUID,
