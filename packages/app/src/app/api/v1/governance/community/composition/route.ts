@@ -6,9 +6,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getDb } from '../../../../../../lib/db';
-import { sql, desc } from 'drizzle-orm';
-import { schema } from '@bangui/db';
+import { getSupabase } from '../../../../../../lib/db';
 
 const ARCHETYPE_LABELS: Record<string, string> = {
   impact_maximizer: 'Impact Maximizer',
@@ -43,19 +41,35 @@ const RISK_COLORS: Record<string, string> = {
 export async function GET() {
   console.log('[API] GET /api/v1/governance/community/composition');
   try {
-    const db = getDb();
+    const db = getSupabase();
 
-    // Get archetype distribution
-    // For each user, get their highest-scoring archetype
+    // Get archetype scores
     console.log('[API] Querying archetype and risk stats...');
-    const archetypeStats = await db
-      .select({
-        archetype: schema.archetypeScores.archetype,
-        count: sql<number>`COUNT(DISTINCT ${schema.archetypeScores.profileId})::int`,
-      })
-      .from(schema.archetypeScores)
-      .groupBy(schema.archetypeScores.archetype)
-      .orderBy(desc(sql`COUNT(DISTINCT ${schema.archetypeScores.profileId})`));
+    const { data: archetypeScores, error: archetypeError } = await db
+      .from('archetype_scores')
+      .select('archetype, profile_id');
+
+    if (archetypeError) {
+      console.error('[API] Error querying archetype scores:', archetypeError);
+      throw archetypeError;
+    }
+
+    // Count unique profiles per archetype
+    const archetypeProfileMap = new Map<string, Set<string>>();
+    (archetypeScores || []).forEach((a) => {
+      if (!a.archetype) return;
+      const existing = archetypeProfileMap.get(a.archetype) || new Set();
+      if (a.profile_id) existing.add(a.profile_id);
+      archetypeProfileMap.set(a.archetype, existing);
+    });
+
+    const archetypeStats = Array.from(archetypeProfileMap.entries()).map(([archetype, profiles]) => ({
+      archetype,
+      count: profiles.size,
+    }));
+
+    // Sort by count descending
+    archetypeStats.sort((a, b) => b.count - a.count);
 
     const totalArchetypes = archetypeStats.reduce((sum, a) => sum + a.count, 0) || 1;
 
@@ -68,34 +82,48 @@ export async function GET() {
     }));
 
     // Get risk tolerance distribution
-    const riskStats = await db
-      .select({
-        riskTolerance: schema.userProfiles.riskTolerance,
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(schema.userProfiles)
-      .where(sql`${schema.userProfiles.riskTolerance} IS NOT NULL`)
-      .groupBy(schema.userProfiles.riskTolerance)
-      .orderBy(desc(sql`COUNT(*)`));
+    const { data: profiles, error: profilesError } = await db
+      .from('user_profiles')
+      .select('risk_tolerance')
+      .not('risk_tolerance', 'is', null);
+
+    if (profilesError) {
+      console.error('[API] Error querying user profiles:', profilesError);
+      throw profilesError;
+    }
+
+    // Count by risk tolerance
+    const riskCountMap = new Map<string, number>();
+    (profiles || []).forEach((p) => {
+      if (!p.risk_tolerance) return;
+      const existing = riskCountMap.get(p.risk_tolerance) || 0;
+      riskCountMap.set(p.risk_tolerance, existing + 1);
+    });
+
+    const riskStats = Array.from(riskCountMap.entries()).map(([riskTolerance, count]) => ({
+      riskTolerance,
+      count,
+    }));
+
+    // Sort by count descending
+    riskStats.sort((a, b) => b.count - a.count);
 
     const totalRisk = riskStats.reduce((sum, r) => sum + r.count, 0) || 1;
 
-    const riskProfiles = riskStats
-      .filter((r) => r.riskTolerance)
-      .map((r) => ({
-        riskTolerance: r.riskTolerance!,
-        label: RISK_LABELS[r.riskTolerance!] || r.riskTolerance,
-        count: r.count,
-        percentage: Math.round((r.count / totalRisk) * 100),
-        color: RISK_COLORS[r.riskTolerance!] || '#6B7280',
-      }));
+    const riskProfiles = riskStats.map((r) => ({
+      riskTolerance: r.riskTolerance,
+      label: RISK_LABELS[r.riskTolerance] || r.riskTolerance,
+      count: r.count,
+      percentage: Math.round((r.count / totalRisk) * 100),
+      color: RISK_COLORS[r.riskTolerance] || '#6B7280',
+    }));
 
     // Ensure all risk types are represented
     const allRiskTypes = ['conservative', 'moderate', 'aggressive'];
     for (const rt of allRiskTypes) {
       if (!riskProfiles.find((r) => r.riskTolerance === rt)) {
         riskProfiles.push({
-          riskTolerance: rt as any,
+          riskTolerance: rt,
           label: RISK_LABELS[rt] || rt,
           count: 0,
           percentage: 0,

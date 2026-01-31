@@ -6,9 +6,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getDb } from '../../../../../../../lib/db';
-import { desc, eq } from 'drizzle-orm';
-import { schema } from '@bangui/db';
+import { getSupabase } from '../../../../../../../lib/db';
 
 export async function GET(
   request: Request,
@@ -16,38 +14,54 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const db = getDb();
+    const db = getSupabase();
 
-    // Get the allocation request to find the agent conversation
-    const allocationRequest = await db.query.allocationRequests.findFirst({
-      where: eq(schema.allocationRequests.id, id),
-      with: {
-        agentConversations: {
-          with: {
-            messages: {
-              orderBy: desc(schema.agentMessages.sentAt),
-            },
-          },
-          limit: 1,
-        },
-      },
-    });
+    // Get the allocation request
+    const { data: allocationRequest, error: requestError } = await db
+      .from('allocation_requests')
+      .select('id, status')
+      .eq('id', id)
+      .single();
 
-    if (!allocationRequest) {
+    if (requestError || !allocationRequest) {
       return NextResponse.json(
         { error: 'Proposal not found' },
         { status: 404 }
       );
     }
 
-    const conversation = allocationRequest.agentConversations?.[0];
-    const messages = (conversation?.messages || []).reverse().map((msg) => ({
-      id: msg.id,
-      sender: msg.sender as 'vince' | 'kincho',
-      content: msg.content,
-      timestamp: new Date(msg.sentAt).toISOString(),
-      metadata: msg.metadata as Record<string, unknown> | undefined,
-    }));
+    // Get agent conversation for this request
+    const { data: conversation } = await db
+      .from('agent_conversations')
+      .select('id')
+      .eq('allocation_request_id', id)
+      .limit(1)
+      .single();
+
+    let messages: Array<{
+      id: string;
+      sender: 'vince' | 'kincho';
+      content: string;
+      timestamp: string;
+      metadata: Record<string, unknown> | undefined;
+    }> = [];
+
+    if (conversation) {
+      // Get messages for the conversation
+      const { data: rawMessages } = await db
+        .from('agent_messages')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .order('sent_at', { ascending: true });
+
+      messages = (rawMessages || []).map((msg) => ({
+        id: msg.id,
+        sender: msg.sender as 'vince' | 'kincho',
+        content: msg.content,
+        timestamp: new Date(msg.sent_at).toISOString(),
+        metadata: msg.metadata as Record<string, unknown> | undefined,
+      }));
+    }
 
     // Check if conversation is still active (proposal is in processing state)
     const isActive = allocationRequest.status === 'processing' || allocationRequest.status === 'pending';

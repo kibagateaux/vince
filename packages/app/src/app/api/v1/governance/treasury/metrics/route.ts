@@ -7,16 +7,12 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
-import { mainnet, base } from 'viem/chains';
-import { getDb } from '../../../../../../lib/db';
+import { base } from 'viem/chains';
+import { getSupabase } from '../../../../../../lib/db';
 import {
   aiETHAbi,
-  formatTokenAmount,
-  formatUsdRaw,
   type VaultConfig,
 } from '../../../../../../lib/protocol';
-import { sql } from 'drizzle-orm';
-import { schema } from '@bangui/db';
 
 // Vault configurations - these should come from environment or config
 const VAULTS: VaultConfig[] = [
@@ -33,42 +29,56 @@ const VAULTS: VaultConfig[] = [
 export async function GET() {
   console.log('[API] GET /api/v1/governance/treasury/metrics');
   try {
-    const db = getDb();
+    const db = getSupabase();
 
     // Get deposit stats from database
     console.log('[API] Querying deposit stats...');
-    const depositStats = await db
-      .select({
-        totalDeposits: sql<string>`COALESCE(SUM(CAST(amount AS DECIMAL)), 0)`,
-        depositCount: sql<number>`COUNT(*)::int`,
-      })
-      .from(schema.deposits)
-      .where(sql`status = 'confirmed'`);
+    const { data: confirmedDeposits, error: depositsError } = await db
+      .from('deposits')
+      .select('amount')
+      .eq('status', 'confirmed');
 
-    const totalDbDeposits = parseFloat(depositStats[0]?.totalDeposits || '0');
+    if (depositsError) {
+      console.error('[API] Error querying deposits:', depositsError);
+      throw depositsError;
+    }
+
+    const totalDbDeposits = (confirmedDeposits || []).reduce(
+      (sum, d) => sum + parseFloat(d.amount || '0'),
+      0
+    );
+    const depositCount = confirmedDeposits?.length || 0;
 
     // Get 30-day deposit change
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const recentDeposits = await db
-      .select({
-        total: sql<string>`COALESCE(SUM(CAST(amount AS DECIMAL)), 0)`,
-      })
-      .from(schema.deposits)
-      .where(sql`status = 'confirmed' AND deposited_at >= ${thirtyDaysAgo.toISOString()}`);
+    const { data: recentDepositsData } = await db
+      .from('deposits')
+      .select('amount')
+      .eq('status', 'confirmed')
+      .gte('deposited_at', thirtyDaysAgo.toISOString());
 
-    const recentTotal = parseFloat(recentDeposits[0]?.total || '0');
+    const recentTotal = (recentDepositsData || []).reduce(
+      (sum, d) => sum + parseFloat(d.amount || '0'),
+      0
+    );
     const olderTotal = totalDbDeposits - recentTotal;
     const change30d = olderTotal > 0 ? ((recentTotal / olderTotal) * 100) : 0;
 
     // Get active strategies count from allocation decisions
-    const activeStrategies = await db
-      .select({
-        count: sql<number>`COUNT(DISTINCT allocations->0->>'causeId')::int`,
-      })
-      .from(schema.allocationDecisions)
-      .where(sql`decision = 'approved'`);
+    const { data: approvedDecisions } = await db
+      .from('allocation_decisions')
+      .select('allocations')
+      .eq('decision', 'approved');
+
+    const uniqueCauseIds = new Set<string>();
+    (approvedDecisions || []).forEach((d) => {
+      const allocations = d.allocations as any[];
+      if (allocations?.[0]?.causeId) {
+        uniqueCauseIds.add(allocations[0].causeId);
+      }
+    });
 
     // Try to fetch onchain data if vault is configured
     let totalValueOnchain = 0n;
@@ -136,7 +146,7 @@ export async function GET() {
         inceptionDate: new Date('2024-01-15').toISOString(),
       },
       activeStrategies: {
-        count: activeStrategies[0]?.count || 1,
+        count: uniqueCauseIds.size || 1,
         uniqueAssets: 1, // Currently only supporting ETH
       },
     };
