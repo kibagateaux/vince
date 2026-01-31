@@ -190,7 +190,6 @@ export default function ChatPage() {
             42161: arbitrum,
             8453: base,
           };
-          const currentChain = chainMap[currentChainId] ?? mainnet;
 
           // Map chain ID to chain name for API
           const chainIdToName: Record<number, Chain> = {
@@ -199,19 +198,41 @@ export default function ChatPage() {
             42161: 'arbitrum',
             8453: 'base',
           };
-          const connectedChainName = chainIdToName[currentChainId] ?? 'ethereum';
+
+          // Determine target chain - use requested chain or connected chain
+          const targetChainName = chain ?? chainIdToName[currentChainId] ?? 'ethereum';
+          const targetChainId = Object.entries(chainIdToName).find(([, name]) => name === targetChainName)?.[0];
+          const targetChain = targetChainId ? chainMap[Number(targetChainId)] : mainnet;
+
+          // Switch chain if needed
+          if (currentChainId !== Number(targetChainId)) {
+            try {
+              await provider.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: `0x${Number(targetChainId).toString(16)}` }],
+              });
+            } catch (switchError: unknown) {
+              const error = switchError as { code?: number };
+              // Chain not added to wallet - add it
+              if (error.code === 4902) {
+                sendMessage(`Please add ${targetChainName} network to your wallet and try again.`);
+                return;
+              }
+              throw switchError;
+            }
+          }
 
           const { depositId, transaction } = await prepareDeposit({
             userId: session.userId,
             walletAddress,
             amount: amountWei,
             token,
-            chain: chain ?? connectedChainName,
+            chain: targetChainName,
           });
 
           const walletClient = createWalletClient({
             account: walletAddress,
-            chain: currentChain,
+            chain: targetChain,
             transport: custom(provider),
           });
 
@@ -219,6 +240,7 @@ export default function ChatPage() {
             to: transaction.to,
             data: transaction.data,
             value: BigInt(transaction.value),
+            chain: null, // Let wallet handle chain validation
           });
 
           if (txHash) {
