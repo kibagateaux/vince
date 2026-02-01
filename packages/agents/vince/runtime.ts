@@ -44,6 +44,34 @@ export interface VinceRuntimeConfig {
 }
 
 /**
+ * Structured analysis of user intent from LLM
+ */
+export interface UserIntentAnalysis {
+  /** Summary of what the user wants to do */
+  intentSummary: string;
+  /** Primary intent category */
+  intentType: 'deposit' | 'question' | 'hesitation' | 'exploration' | 'greeting' | 'other';
+  /** User's emotional tone */
+  emotion: 'excited' | 'neutral' | 'hesitant' | 'confused' | 'frustrated' | 'curious';
+  /** Confidence level (0-1) */
+  confidence: number;
+  /** Requested asset/token if mentioned */
+  asset?: string;
+  /** Requested amount if mentioned */
+  amount?: string;
+  /** Investment strategy preference if expressed */
+  strategyPreference?: 'conservative' | 'balanced' | 'aggressive' | 'impact-focused';
+  /** Cause categories the user seems interested in */
+  causeInterests?: string[];
+  /** Any concerns or objections expressed */
+  concerns?: string[];
+  /** Whether the user seems ready to take action */
+  readyToAct: boolean;
+  /** Raw keywords that triggered the analysis */
+  triggerKeywords: string[];
+}
+
+/**
  * Creates a Vince runtime instance for generating dynamic responses
  */
 export function createVinceRuntime(config: VinceRuntimeConfig) {
@@ -277,11 +305,106 @@ Keep responses concise (2-4 sentences typically). Be warm and conversational, no
     });
   }
 
+  /**
+   * Analyzes user intent and returns structured data for tracking
+   * Uses a fast/cheap model for efficiency
+   * Can analyze across conversation history to piece together deposit details from multiple messages
+   */
+  async function analyzeUserIntent(
+    userMessage: string,
+    triggerKeywords: string[],
+    conversationHistory?: ConversationMessage[]
+  ): Promise<UserIntentAnalysis | null> {
+    const systemPrompt = `You are analyzing a user message from a charitable giving platform. The user is interacting with Vince, an AI assistant helping them donate to causes through a donor-advised fund (DAF).
+
+IMPORTANT: Look at BOTH the current message AND the conversation history to extract deposit details. Users often provide information across multiple messages:
+- Token/asset in one message (e.g., "I want to use ETH", "WBTC please")
+- Amount in another message (e.g., "100", "0.5")
+- Cause preferences mentioned earlier
+
+Aggregate all relevant information from the conversation to build a complete picture.
+
+Analyze and return a JSON object with the following structure:
+{
+  "intentSummary": "Brief 1-2 sentence summary of what the user wants",
+  "intentType": "deposit" | "question" | "hesitation" | "exploration" | "greeting" | "other",
+  "emotion": "excited" | "neutral" | "hesitant" | "confused" | "frustrated" | "curious",
+  "confidence": 0.0-1.0,
+  "asset": "token symbol if mentioned in current OR previous messages (e.g., USDC, ETH, WBTC) or null",
+  "amount": "numeric amount as string if mentioned in current OR previous messages or null",
+  "strategyPreference": "conservative" | "balanced" | "aggressive" | "impact-focused" | null,
+  "causeInterests": ["array of cause categories mentioned anywhere in conversation"],
+  "concerns": ["array of any concerns or objections expressed"],
+  "readyToAct": true if user has provided enough info for a deposit (asset + amount) or is confirming
+}
+
+Be accurate. Extract asset and amount from ANY message in the conversation, not just the current one.
+Return ONLY a valid JSON object. No other text.`;
+
+    // Build conversation context for analysis
+    let conversationContext = '';
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recentMessages = conversationHistory.slice(-10); // Last 10 messages for context
+      conversationContext = `\n\nConversation history (oldest to newest):\n${recentMessages.map(m => `${m.role}: ${m.content}`).join('\n')}\n\n`;
+    }
+
+    const analysisPrompt = `${conversationContext}Current user message: "${userMessage}"
+
+Keywords that triggered this analysis: ${triggerKeywords.join(', ')}
+
+Extract ALL deposit-related details (asset, amount, causes) from the ENTIRE conversation, not just the current message.`;
+
+    try {
+      if (provider === 'anthropic' && anthropicClient) {
+        const response = await anthropicClient.messages.create({
+          model: 'claude-haiku-3-5-20241022', // Use fast/cheap model for analysis
+          max_tokens: 512,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: analysisPrompt }],
+          temperature: 0.3,
+        });
+
+        const textBlock = response.content.find((block) => block.type === 'text');
+        const text = textBlock?.type === 'text' ? textBlock.text : '';
+
+        // Parse JSON from response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const analysis = JSON.parse(jsonMatch[0]) as Omit<UserIntentAnalysis, 'triggerKeywords'>;
+          return { ...analysis, triggerKeywords };
+        }
+      } else if (openaiClient) {
+        const response = await openaiClient.chat.completions.create({
+          model: 'anthropic/claude-3-haiku', // Use fast/cheap model via OpenRouter
+          max_tokens: 512,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: analysisPrompt },
+          ],
+          temperature: 0.3,
+          response_format: { type: 'json_object' },
+        });
+
+        const text = response.choices[0]?.message?.content ?? '';
+        if (text) {
+          const analysis = JSON.parse(text) as Omit<UserIntentAnalysis, 'triggerKeywords'>;
+          return { ...analysis, triggerKeywords };
+        }
+      }
+    } catch (err) {
+      console.error('[Intent Analysis] Failed to analyze user intent:', err);
+      return null;
+    }
+
+    return null;
+  }
+
   return {
     generateResponse,
     generateWelcome,
     generateQuestionnaireResponse,
     generateAnalysisPresentation,
+    analyzeUserIntent,
   };
 }
 

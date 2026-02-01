@@ -30,6 +30,7 @@ export {
   type VinceRuntimeConfig,
   type ConversationMessage,
   type ResponseContext,
+  type UserIntentAnalysis,
 } from './vince/index';
 
 // Kincho exports

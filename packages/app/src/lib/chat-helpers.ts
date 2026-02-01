@@ -23,6 +23,7 @@ import {
   createVinceRuntime,
   type VinceRuntime,
   type ConversationMessage,
+  type UserIntentAnalysis,
 } from '@bangui/agents';
 import { Chain, CHAIN_ID_TO_NAME, CHAIN_DISPLAY_NAMES } from '@bangui/types';
 import type { UUID, ActionPrompt, AgentResponse } from '@bangui/types';
@@ -31,6 +32,7 @@ import {
   getPrimaryVaultByChainId,
   getVaultChainDisplayName,
   getVaultById,
+  findBestVault,
   type VaultMetadata,
 } from './vaults';
 import { DEFAULT_CHAIN_ID } from './chains';
@@ -141,38 +143,24 @@ export const formatMessagesForClient = (
 
 /**
  * Generates welcome message with first question
+ * Uses static message - no LLM call needed for initial questionnaire
  */
 export const generateWelcome = async (
   db: Db,
   userId: string,
-  vinceRuntime: VinceRuntime | null
+  _vinceRuntime: VinceRuntime | null
 ): Promise<{ content: string; actions?: readonly ActionPrompt[] }> => {
   const responses = await getQuestionnaireResponses(db, userId);
   const answeredIds = new Set(responses.map((r) => r.question_id));
   const nextQ = getNextQuestion(answeredIds);
 
-  let welcome: string;
-  if (vinceRuntime && nextQ) {
-    try {
-      welcome = await vinceRuntime.generateQuestionnaireResponse([], nextQ, false);
-    } catch (err) {
-      console.error('[AI] Welcome generation failed:', err);
-      welcome = `Hi! I'm Vince, and I'm here to help you discover how your values can drive meaningful impact.
-
-Before we dive in, I'd love to learn a bit about what matters to you. I have a few quick questions - there are no wrong answers, just your honest thoughts.
-
-Let's start: ${nextQ.text}`;
-    }
-  } else {
-    welcome = `Hi! I'm Vince, and I'm here to help you discover how your values can drive meaningful impact.
+  // Use static welcome message - no LLM needed for questionnaire intro
+  let welcome = `Hi! I'm Vince, and I'm here to help you discover how your values can drive meaningful impact.
 
 Before we dive in, I'd love to learn a bit about what matters to you. I have a few quick questions - there are no wrong answers, just your honest thoughts.`;
-    if (nextQ) {
-      welcome += `\n\nLet's start: ${nextQ.text}`;
-    }
-  }
 
   if (nextQ) {
+    welcome += `\n\nLet's start: ${nextQ.text}`;
     return {
       content: welcome,
       actions: nextQ.options
@@ -286,6 +274,7 @@ export const processMessage = async (
 
 /**
  * Handle questionnaire responses
+ * Uses static responses - no LLM needed for multiple choice questionnaire
  */
 const handleQuestionnaireResponse = async (
   db: Db,
@@ -293,7 +282,7 @@ const handleQuestionnaireResponse = async (
   conversationId: string,
   content: string,
   messageTimestamp: number,
-  vinceRuntime: VinceRuntime | null,
+  _vinceRuntime: VinceRuntime | null,
   userChainId: number,
   _resolvedVault?: VaultMetadata
 ): Promise<AgentResponse> => {
@@ -372,31 +361,8 @@ const handleQuestionnaireResponse = async (
         ? `We have vaults available on other chains: ${otherChainVaults.map(v => `${v.name} (${getVaultChainDisplayName(v)})`).join(', ')}.`
         : '';
 
-    let responseContent: string;
-    if (vinceRuntime) {
-      try {
-        const messages = await getConversationMessages(db, conversationId);
-        const history: ConversationMessage[] = messages.map((m) => ({
-          role: m.sender === 'user' ? 'user' : 'assistant',
-          content: m.content,
-        }));
-        responseContent = await vinceRuntime.generateAnalysisPresentation(
-          history,
-          analysis.archetypeProfile.primaryArchetype,
-          stories.map((s) => ({
-            title: s.title,
-            description: s.description ?? '',
-            causeCategory: s.causeCategory,
-            minInvestment: s.minInvestment ?? '0',
-          }))
-        );
-        // Append vault context if not already mentioned
-        if (vaultContext && !responseContent.includes('vault')) {
-          responseContent += `\n\n${vaultContext}`;
-        }
-      } catch (err) {
-        console.error('AI analysis failed:', err);
-        responseContent = `Thanks for sharing! Based on your responses, I'd say you're ${archetypeDesc}.
+    // Use static archetype presentation - no LLM needed since analysis is deterministic
+    const responseContent = `Thanks for sharing! Based on your responses, I'd say you're ${archetypeDesc}.
 
 Here are some investment opportunities that align with your values:
 
@@ -405,18 +371,6 @@ ${storyList}
 ${vaultContext}
 
 Would you like to learn more about any of these, or explore other options?`;
-      }
-    } else {
-      responseContent = `Thanks for sharing! Based on your responses, I'd say you're ${archetypeDesc}.
-
-Here are some investment opportunities that align with your values:
-
-${storyList}
-
-${vaultContext}
-
-Would you like to learn more about any of these, or explore other options?`;
-    }
 
     const completionActions: ActionPrompt[] = [
       { type: 'suggestion', data: { stories: stories.map((s) => s.id) } },
@@ -446,23 +400,9 @@ Would you like to learn more about any of these, or explore other options?`;
     };
   }
 
-  // Send next question
-  let nextQuestionResponse: string;
-  if (vinceRuntime) {
-    try {
-      const messages = await getConversationMessages(db, conversationId);
-      const history: ConversationMessage[] = messages.map((m) => ({
-        role: m.sender === 'user' ? 'user' : 'assistant',
-        content: m.content,
-      }));
-      nextQuestionResponse = await vinceRuntime.generateQuestionnaireResponse(history, nextQ, true);
-    } catch (err) {
-      console.error('AI questionnaire response failed:', err);
-      nextQuestionResponse = `Great, thanks for sharing that.\n\n${nextQ.text}`;
-    }
-  } else {
-    nextQuestionResponse = `Great, thanks for sharing that.\n\n${nextQ.text}`;
-  }
+  // Send next question - use static response, no LLM needed for questionnaire transitions
+  // Since questions are multiple choice, we just acknowledge and move to the next one
+  const nextQuestionResponse = `Great, thanks for sharing that.\n\n${nextQ.text}`;
 
   const nextQActions: ActionPrompt[] | undefined = nextQ.options
     ? [{ type: 'questionnaire', data: { questionId: nextQ.id, options: nextQ.options } }]
@@ -524,6 +464,68 @@ const parseDepositIntent = (content: string): { amount: string; token: string } 
     }
   }
   return null;
+};
+
+/**
+ * Result from partial deposit intent parsing
+ */
+export interface PartialDepositIntentResult {
+  hasDepositIntent: boolean;
+  amount?: string;
+  analysis?: UserIntentAnalysis;
+}
+
+/**
+ * Detect if user wants to deposit but didn't specify full details
+ * Performs keyword check first, then optionally analyzes with LLM for richer data
+ * LLM analysis looks at full conversation history to piece together deposit info from multiple messages
+ */
+const parsePartialDepositIntent = async (
+  content: string,
+  vinceRuntime: VinceRuntime | null,
+  conversationHistory?: ConversationMessage[]
+): Promise<PartialDepositIntentResult> => {
+  const lowerContent = content.toLowerCase();
+
+  // Check for deposit-related keywords
+  const depositKeywords = ['deposit', 'donate', 'invest', 'give', 'contribute', 'send', 'put in', 'fund'];
+  const matchedDepositKeywords = depositKeywords.filter(keyword => lowerContent.includes(keyword));
+
+  // Check for amount without token (in current message)
+  const amountMatch = content.match(/\$?(\d+(?:\.\d+)?)\s*(?:dollars?)?/i);
+
+  // Check for readiness signals
+  const readinessSignals = ["i'm ready", "let's do it", "let's go", "ready to", "want to deposit", "want to donate",
+                            "i want to", "i'd like to", "how do i", "how can i", "ready", "yes", "ok", "okay", "sure",
+                            "confirm", "proceed", "do it", "go ahead", "sounds good", "perfect", "that works"];
+  const matchedReadinessSignals = readinessSignals.filter(signal => lowerContent.includes(signal));
+
+  const hasDepositKeyword = matchedDepositKeywords.length > 0;
+  const hasReadinessSignal = matchedReadinessSignals.length > 0;
+
+  if (hasDepositKeyword || hasReadinessSignal) {
+    const triggerKeywords = [...matchedDepositKeywords, ...matchedReadinessSignals];
+
+    // Analyze with LLM for richer intent data - passes conversation history
+    // so LLM can piece together deposit details from multiple messages
+    let analysis: UserIntentAnalysis | null = null;
+    if (vinceRuntime) {
+      try {
+        analysis = await vinceRuntime.analyzeUserIntent(content, triggerKeywords, conversationHistory);
+      } catch (err) {
+        console.error('[Intent Analysis] Failed:', err);
+      }
+    }
+
+    return {
+      hasDepositIntent: true,
+      // Prefer LLM-extracted amount (can find it from previous messages) over regex on current message
+      amount: analysis?.amount ?? (amountMatch ? amountMatch[1] : undefined),
+      analysis: analysis ?? undefined,
+    };
+  }
+
+  return { hasDepositIntent: false };
 };
 
 /**
@@ -615,11 +617,11 @@ const generateAIResponse = async (
 
 /**
  * Handle investment queries
- * Only parses explicit deposit amounts - AI handles all conversational responses
+ * Uses static responses for deposit-related intents - only falls back to AI for complex queries
  */
 const handleInvestmentQuery = async (
   db: Db,
-  userId: string,
+  _userId: string,
   conversationId: string,
   content: string,
   vinceRuntime: VinceRuntime | null,
@@ -632,17 +634,18 @@ const handleInvestmentQuery = async (
   const primaryVault = resolvedVault ?? getPrimaryVaultByChainId(userChainId);
   const targetChain = primaryVault?.chain ?? CHAIN_ID_TO_NAME[userChainId] ?? Chain.SEPOLIA;
   const targetChainId = primaryVault?.chainId ?? userChainId;
+  const chainDisplayName = CHAIN_DISPLAY_NAMES[targetChain];
+  const tokenSymbol = primaryVault?.reserveToken ?? 'USDC';
 
   // Try to parse explicit deposit intent (e.g., "donate 10 USDC")
   // Only triggers if user specifies both amount AND token
   const depositIntent = parseDepositIntent(content);
 
   if (depositIntent) {
-    const chainDisplayName = CHAIN_DISPLAY_NAMES[targetChain];
     // Use the vault's reserve token symbol, not the parsed token from text
-    const tokenSymbol = primaryVault?.reserveToken ?? depositIntent.token;
+    const depositTokenSymbol = primaryVault?.reserveToken ?? depositIntent.token;
     // User specified amount and token - prompt to confirm and sign
-    const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${tokenSymbol} on ${chainDisplayName}.
+    const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${depositTokenSymbol} on ${chainDisplayName}.
 
 Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
 
@@ -652,7 +655,7 @@ Click the button below to review and sign the transaction. Your funds will be al
         data: {
           action: 'sign',
           amount: depositIntent.amount,
-          token: tokenSymbol,
+          token: depositTokenSymbol,
           chain: targetChain,
           chainId: targetChainId,
           vaultId: primaryVault?.id,
@@ -676,8 +679,95 @@ Click the button below to review and sign the transaction. Your funds will be al
     };
   }
 
-  // For all other messages, let AI determine intent and respond appropriately
-  // AI will intelligently handle: questions, hesitation, general conversation, etc.
+  // Fetch conversation history for context-aware intent analysis
+  // This allows LLM to piece together deposit info from multiple messages
+  const dbMessages = await getConversationMessages(db, conversationId);
+  const conversationHistory: ConversationMessage[] = dbMessages.map(m => ({
+    role: m.sender === 'user' ? 'user' as const : 'assistant' as const,
+    content: m.content,
+  }));
+
+  // Check for partial deposit intent (user wants to deposit but didn't specify full details)
+  // This also runs LLM analysis with full conversation history to capture user intent
+  const partialIntent = await parsePartialDepositIntent(content, vinceRuntime, conversationHistory);
+
+  if (partialIntent.hasDepositIntent) {
+    let responseContent: string;
+    let depositActions: ActionPrompt[] | undefined;
+
+    // Use amount from analysis if available (LLM might extract it better)
+    const depositAmount = partialIntent.amount;
+
+    // Use analysis to find the best vault based on user's preferences
+    const analysis = partialIntent.analysis;
+    const preferredToken = analysis?.asset;
+    const preferredCauses = analysis?.causeInterests;
+
+    // Find the best vault based on user preferences from analysis
+    const selectedVault = findBestVault(userChainId, preferredToken, preferredCauses) ?? primaryVault;
+    const selectedChain = selectedVault?.chain ?? targetChain;
+    const selectedChainId = selectedVault?.chainId ?? targetChainId;
+    const selectedChainDisplayName = selectedChain ? CHAIN_DISPLAY_NAMES[selectedChain] : chainDisplayName;
+    const selectedTokenSymbol = selectedVault?.reserveToken ?? tokenSymbol;
+
+    if (depositAmount) {
+      // User specified amount - use selected vault based on their preferences
+      responseContent = `Great! You'd like to donate ${depositAmount} ${selectedTokenSymbol} on ${selectedChainDisplayName}.
+
+Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
+
+      depositActions = [
+        {
+          type: 'deposit',
+          data: {
+            action: 'sign',
+            amount: depositAmount,
+            token: selectedTokenSymbol,
+            chain: selectedChain,
+            chainId: selectedChainId,
+            vaultId: selectedVault?.id,
+          },
+        },
+      ];
+    } else {
+      // User wants to deposit but didn't specify amount - prompt for amount
+      responseContent = `I'd love to help you make a deposit! How much ${selectedTokenSymbol} would you like to donate on ${selectedChainDisplayName}?
+
+Just let me know an amount (e.g., "100 ${selectedTokenSymbol}") and I'll prepare the transaction for you.`;
+    }
+
+    // Include intent analysis in metadata for tracking
+    const messageMetadata: Record<string, unknown> = {};
+    if (depositActions) {
+      messageMetadata.actions = depositActions;
+    }
+    if (partialIntent.analysis) {
+      messageMetadata.intentAnalysis = partialIntent.analysis;
+    }
+
+    await createMessage(db, {
+      conversationId,
+      sender: 'vince',
+      content: responseContent,
+      metadata: Object.keys(messageMetadata).length > 0 ? messageMetadata : undefined,
+    });
+
+    // Log the intent analysis for tracking
+    if (partialIntent.analysis) {
+      console.log('[Intent Analysis] User intent captured:', JSON.stringify(partialIntent.analysis, null, 2));
+    }
+
+    return {
+      type: 'response',
+      conversationId: conversationId as UUID,
+      agent: 'vince',
+      content: responseContent,
+      actions: depositActions,
+    };
+  }
+
+  // For complex queries that aren't deposit-related, use AI if available
+  // Otherwise use fallback response
   const aiResponse = await generateAIResponse(db, conversationId, content, vinceRuntime, 'investing', userChainId, primaryVault);
 
   await createMessage(db, {
