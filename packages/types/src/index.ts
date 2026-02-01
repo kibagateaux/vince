@@ -637,6 +637,8 @@ export interface AllocationRequest {
   readonly amount: BigIntString;
   readonly userPreferences: UserPreferences;
   readonly vinceRecommendation: VinceRecommendation;
+  /** ERC4626 vault address for Kincho to use in allocate() function */
+  readonly vaultAddress: Address | null;
   readonly status: AllocationStatus;
   readonly createdAt: Timestamp;
 }

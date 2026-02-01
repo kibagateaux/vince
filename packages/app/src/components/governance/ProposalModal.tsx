@@ -7,6 +7,7 @@
 
 import { FC, useEffect, useRef } from 'react';
 import type { Proposal } from '../../lib/governance/types';
+import { getAddressExplorerUrl, getChainDisplayName } from '../../lib/chains';
 
 interface ProposalModalProps {
   proposal: Proposal;
@@ -114,6 +115,32 @@ export const ProposalModal: FC<ProposalModalProps> = ({ proposal, isOpen, onClos
                   <dt className="text-gray-500">Protocol</dt>
                   <dd className="font-medium text-gray-900">{proposal.targetStrategy.protocol}</dd>
                 </div>
+                {proposal.vaultAddress && (
+                  <div className="flex justify-between items-center">
+                    <dt className="text-gray-500">Vault</dt>
+                    <dd className="font-mono text-sm">
+                      {proposal.chainId ? (
+                        <a
+                          href={getAddressExplorerUrl(proposal.chainId, proposal.vaultAddress) ?? '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          {`${proposal.vaultAddress.slice(0, 6)}...${proposal.vaultAddress.slice(-4)}`}
+                        </a>
+                      ) : (
+                        <span className="text-gray-900">
+                          {`${proposal.vaultAddress.slice(0, 6)}...${proposal.vaultAddress.slice(-4)}`}
+                        </span>
+                      )}
+                      {proposal.chainId && (
+                        <span className="ml-1 text-xs text-gray-400">
+                          ({getChainDisplayName(proposal.chainId)})
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
 

@@ -102,6 +102,8 @@ export const submitAllocationRequest = async (
     amount: string;
     userPreferences: UserPreferences;
     vinceRecommendation: VinceRecommendation;
+    /** ERC4626 vault address for Kincho to use in allocate() function */
+    vaultAddress?: Address;
   }
 ): Promise<AllocationRequest> => {
   // Create the allocation request
@@ -112,6 +114,7 @@ export const submitAllocationRequest = async (
     amount: params.amount,
     userPreferences: params.userPreferences as unknown as Record<string, unknown>,
     vinceRecommendation: params.vinceRecommendation as unknown as Record<string, unknown>,
+    vaultAddress: params.vaultAddress,
   });
 
   // Create agent conversation for Kincho-Vince communication
@@ -125,6 +128,7 @@ export const submitAllocationRequest = async (
     amount: request.amount as string & { readonly __brand: 'BigIntString' },
     userPreferences: params.userPreferences,
     vinceRecommendation: params.vinceRecommendation,
+    vaultAddress: (request.vault_address as Address) ?? null,
     status: 'pending',
     createdAt: new Date(request.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
@@ -162,6 +166,8 @@ export const processAllocationRequest = async (
   }
 
   // Build allocation request object
+  // Use vault address from request, falling back to env var for backwards compatibility
+  const vaultAddress = (requestRecord.vault_address as Address) ?? (process.env.DAF_CONTRACT_ADDRESS as Address) ?? null;
   const request: AllocationRequest = {
     id: requestRecord.id as UUID,
     depositId: requestRecord.deposit_id as UUID | null,
@@ -170,6 +176,7 @@ export const processAllocationRequest = async (
     amount: requestRecord.amount as string & { readonly __brand: 'BigIntString' },
     userPreferences: requestRecord.user_preferences as unknown as UserPreferences,
     vinceRecommendation: requestRecord.vince_recommendation as unknown as VinceRecommendation,
+    vaultAddress,
     status: 'processing',
     createdAt: new Date(requestRecord.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
@@ -196,6 +203,7 @@ export const processAllocationRequest = async (
       amount: request.amount,
       userPreferences: request.userPreferences,
       vinceRecommendation: request.vinceRecommendation,
+      vaultAddress: request.vaultAddress,
     }),
     metadata: { type: 'allocation_request' },
   });
@@ -288,6 +296,8 @@ export const processAllocationRequestWithConsensus = async (
   }
 
   // Build allocation request object
+  // Use vault address from request, falling back to env var for backwards compatibility
+  const vaultAddressFromRequest = (requestRecord.vault_address as Address) ?? (process.env.DAF_CONTRACT_ADDRESS as Address) ?? null;
   const request: AllocationRequest = {
     id: requestRecord.id as UUID,
     depositId: requestRecord.deposit_id as UUID | null,
@@ -296,6 +306,7 @@ export const processAllocationRequestWithConsensus = async (
     amount: requestRecord.amount as string & { readonly __brand: 'BigIntString' },
     userPreferences: requestRecord.user_preferences as unknown as UserPreferences,
     vinceRecommendation: requestRecord.vince_recommendation as unknown as VinceRecommendation,
+    vaultAddress: vaultAddressFromRequest,
     status: 'processing',
     createdAt: new Date(requestRecord.created_at).getTime() as number & { readonly __brand: 'Timestamp' },
   };
@@ -315,15 +326,15 @@ export const processAllocationRequestWithConsensus = async (
       amount: request.amount,
       userPreferences: request.userPreferences,
       vinceRecommendation: request.vinceRecommendation,
+      vaultAddress: request.vaultAddress,
     }),
     metadata: { type: 'allocation_request' },
   });
 
-  // Run the multi-round consensus process
-  const vaultAddress = process.env.DAF_CONTRACT_ADDRESS as Address;
+  // Run the multi-round consensus process using vault address from request
   const consensusResult = await runConsensusProcess(request, fundState, {
     ...consensusConfig,
-    vaultAddress,
+    vaultAddress: vaultAddressFromRequest,
   });
 
   // Record consensus deliberation as agent message

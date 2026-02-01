@@ -14,7 +14,7 @@ import {
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../../lib/kincho-helpers';
-import type { UUID, UserPreferences, VinceRecommendation } from '@bangui/types';
+import type { UUID, UserPreferences, VinceRecommendation, Address } from '@bangui/types';
 
 interface AllocationRequestPayload {
   depositId?: UUID;
@@ -23,6 +23,8 @@ interface AllocationRequestPayload {
   amount: string;
   userPreferences: UserPreferences;
   vinceRecommendation: VinceRecommendation;
+  /** ERC4626 vault address for Kincho to use in allocate() function */
+  vaultAddress?: Address;
 }
 
 export async function POST(request: NextRequest) {
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Submit the allocation request
+    // Submit the allocation request with vault address if provided
     const allocationRequest = await submitAllocationRequest(db, {
       depositId: payload.depositId,
       userId: payload.userId,
@@ -54,6 +56,7 @@ export async function POST(request: NextRequest) {
       amount: payload.amount,
       userPreferences: payload.userPreferences,
       vinceRecommendation: payload.vinceRecommendation,
+      vaultAddress: payload.vaultAddress,
     });
 
     // Process the request with Kincho
