@@ -261,13 +261,13 @@ const AllocationRequestContent: FC<{ content: Record<string, unknown> }> = ({ co
         I'm requesting an allocation decision for a <strong>{formatCurrency(amount)}</strong> deposit.
       </p>
 
-      {prefs?.riskTolerance && (
+      {!!prefs?.riskTolerance && (
         <p className="text-sm text-blue-700">
           User's risk tolerance: <span className="font-medium">{String(prefs.riskTolerance)}</span>
         </p>
       )}
 
-      {rec?.reasoning && (
+      {!!rec?.reasoning && (
         <p className="text-sm text-blue-700 italic">
           "{String(rec.reasoning)}"
         </p>
