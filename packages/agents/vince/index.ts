@@ -33,10 +33,13 @@ export {
 export {
   buildDepositTx,
   buildApproveTx,
+  buildAllocateTx,
+  encodeAllocateData,
   prepareDepositTransactions,
   checkAllowance,
   simulateTx,
   getChainId,
   formatAmount,
   parseAmount,
+  type BuildAllocateTxInput,
 } from './subagents/tx-generator.js';

@@ -19,10 +19,21 @@ import {AiETH} from "../src/aiETH.sol";
  *   - DEPOSIT_TOKEN: Address of the reserve token (e.g., WETH)
  *   - DEBT_TOKEN: Address of Aave debt token
  *   - AAVE_MARKET: Address of Aave lending pool
- *   - ADMIN: Admin address for the vault
+ *   - ADMIN: Admin address for the vault (FUN_OPS role)
+ *            For autonomous Kincho operation, set this to KINCHO_PRIVATE_KEY's address.
+ *            For production, consider using a multisig that includes Kincho.
  *   - TOKEN_NAME: Name for the vault token (e.g., "AI ETH")
  *   - TOKEN_SYMBOL: Symbol for the vault token (e.g., "aiETH")
  *   - ETHERSCAN_API_KEY: For contract verification
+ *
+ * @dev Admin Role (FUN_OPS):
+ *   The ADMIN address is set as FUN_OPS in the vault, which can:
+ *   - Call allocate() to delegate Aave credit to cities/projects
+ *   - Call claimInterest() to withdraw excess interest
+ *   - Receive rescued ETH and tokens via recoverFunds()
+ *
+ *   For Kincho AI agent to execute lend transactions autonomously,
+ *   the ADMIN should be set to Kincho's wallet address (derived from KINCHO_PRIVATE_KEY).
  */
 contract DeployAiETH is Script {
     function run() external {
