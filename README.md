@@ -6,9 +6,9 @@ A DAF (Donor Advised Fund) platform featuring an AI-powered conversational agent
 
 ```
 packages/
-├── types/     # Shared TypeScript type definitions
-├── agent/     # ElizaOS-based AI agent (Vince & Kincho)
-└── app/       # Next.js app with API routes, Privy auth & Wagmi
+????????? types/     # Shared TypeScript type definitions
+????????? agent/     # ElizaOS-based AI agent (Vince & Kincho)
+????????? app/       # Next.js app with API routes, Privy auth & Wagmi
 ```
 
 ## Prerequisites
@@ -130,7 +130,7 @@ npm run test
 
 | Contract | Address | Etherscan |
 |----------|---------|-----------|
-| **AiETH** | `0xA0Ae7cc880e433a733E79CEF64Aa9Fc6711c1E8A` | [View](https://sepolia.etherscan.io/address/0xA0Ae7cc880e433a733E79CEF64Aa9Fc6711c1E8A) |
+| **AiETH** | `0xe340586D044f8062BF153FBcC7D867e78B10085f` | [View](https://sepolia.etherscan.io/address/0xe340586D044f8062BF153FBcC7D867e78B10085f) |
 | Reserve Token | `0x29f2D40B0605204364af54EC677bD022dA425d03` | [View](https://sepolia.etherscan.io/address/0x29f2D40B0605204364af54EC677bD022dA425d03) |
 | Aave Market | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` | [View](https://sepolia.etherscan.io/address/0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951) |
 | Debt Token | `0x22675C506A8FC26447aFFfa33640f6af5d4D4cF0` | [View](https://sepolia.etherscan.io/address/0x22675C506A8FC26447aFFfa33640f6af5d4D4cF0) |

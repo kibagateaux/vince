@@ -13,7 +13,7 @@ contract AiETH is IAiETH, ERC20 {
 
     // Multisig deployed on Mainnet, Arbitrum, Base, OP,
     address public FUN_OPS;
-    uint64 public constant MIN_DEPOSIT = 100_000_000; // to prevent aave math from causing reverts on small amounts from rounding decimal diffs. $100 USDC or 0.5 ETH ETH
+    uint64 public constant MIN_DEPOSIT = 1_000; // was 100_000_000 for 18 decimal. figure out how to get rid of.  prevent aave math from causing reverts on small amounts from rounding decimal diffs. $100 USDC or 0.5 ETH ETH
     // TODO figure out lowest amount where aave tests dont fail
 
     /// @notice min health factor for user to redeem to prevent malicious liquidations. 2 = Redeems until debt = 50% of aiETH TVL
