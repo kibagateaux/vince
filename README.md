@@ -124,6 +124,18 @@ npm run test
 | `POST /api/v1/agents/kincho/message` | Kincho agent endpoint |
 | `POST /api/v1/agents/vince-kincho/relay` | Vince-Kincho relay endpoint |
 
+## Deployed Contracts
+
+### Sepolia Testnet
+
+| Contract | Address | Etherscan |
+|----------|---------|-----------|
+| **AiETH** | `0xA0Ae7cc880e433a733E79CEF64Aa9Fc6711c1E8A` | [View](https://sepolia.etherscan.io/address/0xA0Ae7cc880e433a733E79CEF64Aa9Fc6711c1E8A) |
+| Reserve Token | `0x29f2D40B0605204364af54EC677bD022dA425d03` | [View](https://sepolia.etherscan.io/address/0x29f2D40B0605204364af54EC677bD022dA425d03) |
+| Aave Market | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` | [View](https://sepolia.etherscan.io/address/0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951) |
+| Debt Token | `0x22675C506A8FC26447aFFfa33640f6af5d4D4cF0` | [View](https://sepolia.etherscan.io/address/0x22675C506A8FC26447aFFfa33640f6af5d4D4cF0) |
+| Admin | `0x9faFC61799b4E4D4EE8b6843fefd434612450243` | [View](https://sepolia.etherscan.io/address/0x9faFC61799b4E4D4EE8b6843fefd434612450243) |
+
 ## Architecture
 
 - **Frontend**: Next.js 14 + React 18 + TailwindCSS + Privy for wallet auth
