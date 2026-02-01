@@ -10,7 +10,9 @@ import {
   getSupabase,
   getAgentConversationById,
 } from '../../../../../../lib/db';
+import { getVaultByAddress } from '../../../../../../lib/vaults';
 import type { Sender } from '../../../../../../lib/db/types';
+import type { Address } from '@bangui/types';
 
 /** Agent message for detail view */
 interface AgentMessageDetail {
@@ -33,6 +35,8 @@ interface AgentConversationDetail {
     readonly userId: string;
     readonly conversationId: string | null;
     readonly amount: string;
+    readonly vaultAddress: string | null;
+    readonly chainId: number | null;
     readonly status: string;
     readonly createdAt: number;
     readonly userEmail: string | null;
@@ -67,15 +71,21 @@ export async function GET(
       sentAt: new Date(m.sent_at).getTime(),
     })),
     allocationRequest: conversation.allocation_request
-      ? {
-          id: conversation.allocation_request.id,
-          userId: conversation.allocation_request.user_id,
-          conversationId: conversation.allocation_request.conversation_id,
-          amount: conversation.allocation_request.amount,
-          status: conversation.allocation_request.status,
-          createdAt: new Date(conversation.allocation_request.created_at).getTime(),
-          userEmail: conversation.allocation_request.user?.email ?? null,
-        }
+      ? (() => {
+          const vaultAddress = conversation.allocation_request.vault_address ?? null;
+          const vault = vaultAddress ? getVaultByAddress(vaultAddress as Address) : null;
+          return {
+            id: conversation.allocation_request.id,
+            userId: conversation.allocation_request.user_id,
+            conversationId: conversation.allocation_request.conversation_id,
+            amount: conversation.allocation_request.amount,
+            vaultAddress,
+            chainId: vault?.chainId ?? null,
+            status: conversation.allocation_request.status,
+            createdAt: new Date(conversation.allocation_request.created_at).getTime(),
+            userEmail: conversation.allocation_request.user?.email ?? null,
+          };
+        })()
       : null,
   };
 

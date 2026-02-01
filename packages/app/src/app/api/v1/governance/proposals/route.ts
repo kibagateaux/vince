@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getSupabase } from '../../../../../lib/db';
+import { getVaultByAddress } from '../../../../../lib/vaults';
+import type { Address } from '@bangui/types';
 
 export async function GET(request: Request) {
   console.log('[API] GET /api/v1/governance/proposals');
@@ -104,6 +106,11 @@ export async function GET(request: Request) {
       const convMessages = agentConv ? (messageMap.get(agentConv.id) || []).slice(0, 5) : [];
       const vinceRec = req.vince_recommendation as any;
 
+      // Get vault address and chain ID
+      const vaultAddress = req.vault_address ?? null;
+      const vault = vaultAddress ? getVaultByAddress(vaultAddress as Address) : null;
+      const chainId = vault?.chainId ?? null;
+
       // Parse Kincho analysis from decision
       const kinchoAnalysis = decision?.kincho_analysis as any || {};
 
@@ -144,6 +151,8 @@ export async function GET(request: Request) {
             ? new Date(agentConv.last_message_at).toISOString()
             : new Date(req.created_at).toISOString(),
         },
+        vaultAddress,
+        chainId,
         createdAt: new Date(req.created_at).toISOString(),
         updatedAt: decision?.decided_at
           ? new Date(decision.decided_at).toISOString()

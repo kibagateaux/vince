@@ -11,16 +11,18 @@ import {
   getSupabase,
   createMessage,
   getDeposit,
+  getWallet,
   getUserProfile,
   updateConversationState,
 } from '../../../../../../lib/db';
+import { getPrimaryVault } from '../../../../../../lib/vaults';
 import {
   submitAllocationRequest,
   processAllocationRequest,
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../../lib/kincho-helpers';
-import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation } from '@bangui/types';
+import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation, Address, Chain } from '@bangui/types';
 
 interface RelayPayload {
   depositId: UUID;
@@ -58,6 +60,19 @@ export async function POST(request: NextRequest) {
         { error: 'Deposit not confirmed yet' },
         { status: 400 }
       );
+    }
+
+    // Get wallet to determine chain and vault address
+    const wallet = await getWallet(db, deposit.wallet_id);
+    if (!wallet) {
+      return NextResponse.json({ error: 'Wallet not found for deposit' }, { status: 404 });
+    }
+
+    // Get the vault address for the wallet's chain
+    const vault = getPrimaryVault(wallet.chain as Chain);
+    const vaultAddress = vault?.address as Address | undefined;
+    if (!vaultAddress || vaultAddress === '0x0000000000000000000000000000000000000000') {
+      console.warn(`[Vince-Kincho Relay] No vault configured for chain ${wallet.chain}, using default from env`);
     }
 
     // Get user profile for preferences
@@ -158,7 +173,7 @@ export async function POST(request: NextRequest) {
       reasoning: `Based on user's profile analysis and deposit of ${deposit.amount} ${deposit.token}`,
     };
 
-    // Submit allocation request to Kincho
+    // Submit allocation request to Kincho with the vault address for the deposit's chain
     const allocationRequest = await submitAllocationRequest(db, {
       depositId: payload.depositId,
       userId: payload.userId,
@@ -166,6 +181,7 @@ export async function POST(request: NextRequest) {
       amount: deposit.amount,
       userPreferences,
       vinceRecommendation,
+      vaultAddress,
     });
 
     // Process with Kincho

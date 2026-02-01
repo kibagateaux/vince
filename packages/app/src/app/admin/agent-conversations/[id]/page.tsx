@@ -11,6 +11,7 @@ import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { getAgentConversationDetail } from '../../../../lib/api';
 import { AgentConversationTimeline } from '../../../../components/admin/AgentConversationTimeline';
+import { getAddressExplorerUrl, getChainDisplayName } from '../../../../lib/chains';
 
 /** Status badge colors */
 const statusColors: Record<string, { bg: string; text: string }> = {
@@ -204,6 +205,37 @@ export default function AgentConversationDetailPage() {
                       {formatAmount(conversation.allocationRequest.amount)}
                     </dd>
                   </div>
+                  {conversation.allocationRequest.vaultAddress && (
+                    <div>
+                      <dt className="text-xs text-gray-400">Vault</dt>
+                      <dd className="text-sm text-gray-900 font-mono">
+                        {(() => {
+                          const explorerUrl = conversation.allocationRequest.chainId
+                            ? getAddressExplorerUrl(conversation.allocationRequest.chainId, conversation.allocationRequest.vaultAddress)
+                            : null;
+                          const shortAddr = `${conversation.allocationRequest.vaultAddress.slice(0, 6)}...${conversation.allocationRequest.vaultAddress.slice(-4)}`;
+                          return explorerUrl ? (
+                            <a
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                              title={conversation.allocationRequest.vaultAddress}
+                            >
+                              {shortAddr}
+                            </a>
+                          ) : (
+                            <span title={conversation.allocationRequest.vaultAddress}>{shortAddr}</span>
+                          );
+                        })()}
+                        {conversation.allocationRequest.chainId && (
+                          <span className="ml-1 text-xs text-gray-400">
+                            ({getChainDisplayName(conversation.allocationRequest.chainId)})
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt className="text-xs text-gray-400">Status</dt>
                     <dd className="text-sm">

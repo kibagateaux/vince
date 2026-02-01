@@ -7,6 +7,26 @@ import type { Db } from '../client';
 import type { WalletRow, WalletInsert, Chain } from '../types';
 
 /**
+ * Gets a wallet by ID
+ */
+export const getWallet = async (
+  db: Db,
+  id: string
+): Promise<WalletRow | null> => {
+  const { data, error } = await db
+    .from('wallets')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  return data;
+};
+
+/**
  * Finds or creates a wallet for a user
  */
 export const findOrCreateWallet = async (

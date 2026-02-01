@@ -148,6 +148,7 @@ export interface AllocationRequestWithUser {
   readonly user_id: string;
   readonly conversation_id: string | null;
   readonly amount: string;
+  readonly vault_address: string | null;
   readonly status: string;
   readonly created_at: string;
   readonly user: {
@@ -183,12 +184,7 @@ export const getAllAgentConversations = async (
       *,
       messages:agent_messages(*),
       allocation_request:allocation_requests(
-        id,
-        user_id,
-        conversation_id,
-        amount,
-        status,
-        created_at,
+        *,
         user:users(id, email)
       )
     `)
@@ -236,12 +232,7 @@ export const getAgentConversationById = async (
       *,
       messages:agent_messages(*),
       allocation_request:allocation_requests(
-        id,
-        user_id,
-        conversation_id,
-        amount,
-        status,
-        created_at,
+        *,
         user:users(id, email)
       )
     `)
@@ -276,12 +267,7 @@ export const getAgentConversationsByUserConversation = async (
       *,
       messages:agent_messages(*),
       allocation_request:allocation_requests!inner(
-        id,
-        user_id,
-        conversation_id,
-        amount,
-        status,
-        created_at,
+        *,
         user:users(id, email)
       )
     `)
