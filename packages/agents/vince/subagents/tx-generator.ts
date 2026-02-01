@@ -33,6 +33,20 @@ const aiETHDepositAbi = [
   },
 ] as const;
 
+/** AiETH allocate function ABI for credit delegation */
+const aiETHAllocateAbi = [
+  {
+    name: 'allocate',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'city', type: 'address' },
+      { name: 'dubloons', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+] as const;
+
 /** ERC20 approve and allowance ABI */
 const erc20Abi = [
   {
@@ -116,6 +130,25 @@ export const encodeApproveData = (
 };
 
 /**
+ * Encodes allocate function call data for AiETH.allocate(address,uint256)
+ * This function delegates Aave credit to a "city" (project) for lending.
+ *
+ * @param city - Address of the city/project to receive credit delegation
+ * @param amount - Amount to delegate (Aave market denominated, usually USD to 10 decimals)
+ * @returns Encoded calldata
+ */
+export const encodeAllocateData = (
+  city: Address,
+  amount: BigIntString
+): `0x${string}` => {
+  return encodeFunctionData({
+    abi: aiETHAllocateAbi,
+    functionName: 'allocate',
+    args: [city, BigInt(amount)],
+  });
+};
+
+/**
  * Input for building deposit transaction
  */
 export interface BuildDepositTxInput {
@@ -138,6 +171,20 @@ export interface BuildApproveTxInput {
   /** Spender address (vault contract) */
   readonly spenderAddress: Address;
   /** Amount to approve */
+  readonly amount: BigIntString;
+  /** Target chain */
+  readonly chain: Chain;
+}
+
+/**
+ * Input for building allocate (lend) transaction
+ */
+export interface BuildAllocateTxInput {
+  /** AiETH vault contract address */
+  readonly contractAddress: Address;
+  /** City/project address to receive credit delegation */
+  readonly city: Address;
+  /** Amount to delegate (Aave market denominated) */
   readonly amount: BigIntString;
   /** Target chain */
   readonly chain: Chain;
@@ -185,6 +232,26 @@ export const buildApproveTx = (input: BuildApproveTxInput): UnsignedTransaction 
   data: encodeApproveData(input.spenderAddress, input.amount),
   value: '0' as BigIntString,
   gasEstimate: APPROVE_GAS_ESTIMATE,
+  chainId: getChainId(input.chain),
+});
+
+/** Gas estimate for allocate transactions */
+const ALLOCATE_GAS_ESTIMATE: BigIntString = '150000' as BigIntString;
+
+/**
+ * Builds unsigned allocate (lend) transaction for AiETH
+ * This transaction delegates Aave credit to a city/project.
+ *
+ * IMPORTANT: This function requires FUN_OPS admin role on the vault.
+ *
+ * @param input - Allocate transaction parameters
+ * @returns Unsigned transaction ready for signing
+ */
+export const buildAllocateTx = (input: BuildAllocateTxInput): UnsignedTransaction => ({
+  to: input.contractAddress,
+  data: encodeAllocateData(input.city, input.amount),
+  value: '0' as BigIntString,
+  gasEstimate: ALLOCATE_GAS_ESTIMATE,
   chainId: getChainId(input.chain),
 });
 

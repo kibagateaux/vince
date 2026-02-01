@@ -24,6 +24,16 @@ export {
   type MetaCognitionResult,
 } from './subagents/index.js';
 
+// Actions
+export {
+  validateLendAction,
+  createLendAuditEntry,
+  LEND_THRESHOLDS,
+  type LendActionInput,
+  type LendValidationResult,
+  type LendActionResult,
+} from './actions/index.js';
+
 // Consensus system
 export {
   runConsensusProcess,
