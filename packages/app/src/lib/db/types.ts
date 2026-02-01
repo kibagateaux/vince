@@ -340,6 +340,7 @@ export interface Database {
           amount: string;
           user_preferences: Json;
           vince_recommendation: Json;
+          vault_address: string | null;
           status: AllocationStatus;
           created_at: string;
         };
@@ -351,6 +352,7 @@ export interface Database {
           amount: string;
           user_preferences: Json;
           vince_recommendation: Json;
+          vault_address?: string | null;
           status?: AllocationStatus;
           created_at?: string;
         };
@@ -362,6 +364,7 @@ export interface Database {
           amount?: string;
           user_preferences?: Json;
           vince_recommendation?: Json;
+          vault_address?: string | null;
           status?: AllocationStatus;
           created_at?: string;
         };

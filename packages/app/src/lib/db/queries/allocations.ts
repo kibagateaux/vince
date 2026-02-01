@@ -24,6 +24,8 @@ export interface CreateAllocationRequestInput {
   readonly amount: string;
   readonly userPreferences: Record<string, unknown>;
   readonly vinceRecommendation: Record<string, unknown>;
+  /** ERC4626 vault address for Kincho to use in allocate() function */
+  readonly vaultAddress?: string;
 }
 
 /**
@@ -40,6 +42,7 @@ export const createAllocationRequest = async (
     amount: input.amount,
     user_preferences: input.userPreferences as Json,
     vince_recommendation: input.vinceRecommendation as Json,
+    vault_address: input.vaultAddress ?? null,
     status: 'pending',
   };
 

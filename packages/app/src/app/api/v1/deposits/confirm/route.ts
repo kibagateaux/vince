@@ -11,16 +11,18 @@ import {
   getSupabase,
   updateDepositStatus,
   getDeposit,
+  getWallet,
   createMessage,
   getUserProfile,
 } from '../../../../../lib/db';
+import { getPrimaryVault } from '../../../../../lib/vaults';
 import {
   submitAllocationRequest,
   processAllocationRequest,
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../lib/kincho-helpers';
-import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation } from '@bangui/types';
+import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation, Address, Chain } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
   const db = getSupabase();
@@ -36,6 +38,19 @@ export async function POST(request: NextRequest) {
 
   if (!deposit) {
     return NextResponse.json({ error: 'Deposit not found' }, { status: 404 });
+  }
+
+  // Get wallet to determine chain and vault address
+  const wallet = await getWallet(db, deposit.wallet_id);
+  if (!wallet) {
+    return NextResponse.json({ error: 'Wallet not found for deposit' }, { status: 404 });
+  }
+
+  // Get the vault address for the wallet's chain
+  const vault = getPrimaryVault(wallet.chain as Chain);
+  const vaultAddress = vault?.address as Address | undefined;
+  if (!vaultAddress || vaultAddress === '0x0000000000000000000000000000000000000000') {
+    console.warn(`[Deposit Confirm] No vault configured for chain ${wallet.chain}, using default from env`);
   }
 
   // Check if Kincho is available
@@ -121,7 +136,7 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    // Submit to Kincho
+    // Submit to Kincho with the vault address for the deposit's chain
     const allocationRequest = await submitAllocationRequest(db, {
       depositId: depositId,
       userId: deposit.user_id as UUID,
@@ -129,6 +144,7 @@ export async function POST(request: NextRequest) {
       amount: deposit.amount,
       userPreferences,
       vinceRecommendation,
+      vaultAddress,
     });
 
     // Process allocation decision
