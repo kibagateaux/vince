@@ -33,6 +33,8 @@ import {
   getVaultChainDisplayName,
   getVaultById,
   findBestVault,
+  validateMinimumDeposit,
+  getMinimumDepositDisplay,
   type VaultMetadata,
 } from './vaults';
 import { DEFAULT_CHAIN_ID } from './chains';
@@ -648,6 +650,36 @@ const handleInvestmentQuery = async (
   if (depositIntent) {
     // Use the vault's reserve token symbol, not the parsed token from text
     const depositTokenSymbol = primaryVault?.reserveToken ?? depositIntent.token;
+
+    // CRITICAL: Validate minimum deposit before showing action button
+    if (primaryVault) {
+      const minDepositValidation = validateMinimumDeposit(primaryVault, depositIntent.amount);
+      if (!minDepositValidation.isValid) {
+        console.log('[DEPOSIT] Amount below minimum:', {
+          amount: depositIntent.amount,
+          minDeposit: primaryVault.minDeposit,
+          vault: primaryVault.name,
+        });
+
+        const belowMinResponse = `I'd love to help you donate ${depositIntent.amount} ${depositTokenSymbol}, but the minimum deposit for ${primaryVault.name} is ${getMinimumDepositDisplay(primaryVault)}.
+
+Please try again with an amount of at least ${primaryVault.minDeposit} ${depositTokenSymbol}.`;
+
+        await createMessage(db, {
+          conversationId,
+          sender: 'vince',
+          content: belowMinResponse,
+        });
+
+        return {
+          type: 'response',
+          conversationId: conversationId as UUID,
+          agent: 'vince',
+          content: belowMinResponse,
+        };
+      }
+    }
+
     // User specified amount and token - prompt to confirm and sign
     const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${depositTokenSymbol} on ${chainDisplayName}.
 
@@ -715,29 +747,67 @@ Click the button below to review and sign the transaction. Your funds will be al
     const selectedTokenSymbol = selectedVault?.reserveToken ?? tokenSymbol;
 
     if (depositAmount) {
-      // User specified amount - use selected vault based on their preferences
-      responseContent = `Great! You'd like to donate ${depositAmount} ${selectedTokenSymbol} on ${selectedChainDisplayName}.
+      // CRITICAL: Validate minimum deposit before showing action button
+      if (selectedVault) {
+        const minDepositValidation = validateMinimumDeposit(selectedVault, depositAmount);
+        if (!minDepositValidation.isValid) {
+          console.log('[DEPOSIT] Partial intent amount below minimum:', {
+            amount: depositAmount,
+            minDeposit: selectedVault.minDeposit,
+            vault: selectedVault.name,
+          });
+
+          responseContent = `I'd love to help you donate ${depositAmount} ${selectedTokenSymbol}, but the minimum deposit for ${selectedVault.name} is ${getMinimumDepositDisplay(selectedVault)}.
+
+Please try again with an amount of at least ${selectedVault.minDeposit} ${selectedTokenSymbol}.`;
+
+          // Don't include deposit actions for below-minimum amounts
+        } else {
+          // User specified amount that meets minimum - use selected vault based on their preferences
+          responseContent = `Great! You'd like to donate ${depositAmount} ${selectedTokenSymbol} on ${selectedChainDisplayName}.
 
 Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
 
-      depositActions = [
-        {
-          type: 'deposit',
-          data: {
-            action: 'sign',
-            amount: depositAmount,
-            token: selectedTokenSymbol,
-            chain: selectedChain,
-            chainId: selectedChainId,
-            vaultId: selectedVault?.id,
-          },
-        },
-      ];
-    } else {
-      // User wants to deposit but didn't specify amount - prompt for amount
-      responseContent = `I'd love to help you make a deposit! How much ${selectedTokenSymbol} would you like to donate on ${selectedChainDisplayName}?
+          depositActions = [
+            {
+              type: 'deposit',
+              data: {
+                action: 'sign',
+                amount: depositAmount,
+                token: selectedTokenSymbol,
+                chain: selectedChain,
+                chainId: selectedChainId,
+                vaultId: selectedVault?.id,
+              },
+            },
+          ];
+        }
+      } else {
+        // No vault found - still show the deposit action (validation will happen on client)
+        responseContent = `Great! You'd like to donate ${depositAmount} ${selectedTokenSymbol} on ${selectedChainDisplayName}.
 
-Just let me know an amount (e.g., "100 ${selectedTokenSymbol}") and I'll prepare the transaction for you.`;
+Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
+
+        depositActions = [
+          {
+            type: 'deposit',
+            data: {
+              action: 'sign',
+              amount: depositAmount,
+              token: selectedTokenSymbol,
+              chain: selectedChain,
+              chainId: selectedChainId,
+              vaultId: undefined,
+            },
+          },
+        ];
+      }
+    } else {
+      // User wants to deposit but didn't specify amount - prompt for amount with minimum info
+      const minDepositInfo = selectedVault ? ` (minimum: ${getMinimumDepositDisplay(selectedVault)})` : '';
+      responseContent = `I'd love to help you make a deposit! How much ${selectedTokenSymbol} would you like to donate on ${selectedChainDisplayName}${minDepositInfo}?
+
+Just let me know an amount (e.g., "${selectedVault?.minDeposit ?? '100'} ${selectedTokenSymbol}") and I'll prepare the transaction for you.`;
     }
 
     // Include intent analysis in metadata for tracking

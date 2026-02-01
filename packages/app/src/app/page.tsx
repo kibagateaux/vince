@@ -13,6 +13,7 @@ import { useChat } from '../hooks/useChat';
 import { useVinceState } from '../hooks/useVinceState';
 import { useVaultStore } from '../hooks/useVaultStore';
 import { connectSession, prepareDeposit, confirmDeposit } from '../lib/api';
+import { validateMinimumDeposit, getMinimumDepositDisplay, getVaultById, getPrimaryVaultByChainId } from '../lib/vaults';
 import { Message } from '../components/Message';
 import {
   CHAIN_MAP,
@@ -332,11 +333,12 @@ export default function ChatPage() {
   const handleAction = useCallback(
     async (action: ActionPrompt) => {
       if (action.type === 'deposit' && session && user?.wallet?.address) {
-        const { amount, token, chain, chainId: actionChainId } = action.data as {
+        const { amount, token, chain, chainId: actionChainId, vaultId } = action.data as {
           amount?: string;
           token?: string;
           chain?: Chain;
           chainId?: number;
+          vaultId?: string;
         };
 
         if (!amount || !token) {
@@ -357,6 +359,41 @@ export default function ChatPage() {
           // CRITICAL: Validate token is supported before proceeding
           if (!isTokenSupported(token)) {
             throw new Error(`Unsupported token: ${token}. Cannot proceed with deposit.`);
+          }
+
+          // Get the vault to validate minimum deposit
+          // Try vaultId first, then fall back to primary vault for the chain
+          const targetVault = vaultId
+            ? getVaultById(vaultId)
+            : actionChainId
+              ? getPrimaryVaultByChainId(actionChainId)
+              : currentChainId
+                ? getPrimaryVaultByChainId(currentChainId)
+                : undefined;
+
+          // CRITICAL: Validate minimum deposit amount
+          if (targetVault) {
+            const minDepositValidation = validateMinimumDeposit(targetVault, amount);
+            if (!minDepositValidation.isValid) {
+              console.error('[DEPOSIT] Minimum deposit validation failed:', {
+                amount,
+                token,
+                minDeposit: targetVault.minDeposit,
+                vault: targetVault.name,
+              });
+              sendMessage(
+                `Sorry, the minimum deposit for ${targetVault.name} is ${getMinimumDepositDisplay(targetVault)}. ` +
+                `Your deposit of ${amount} ${token} is below this minimum.`,
+                currentChainId ?? undefined,
+                selectedVault?.id
+              );
+              return;
+            }
+            console.log('[DEPOSIT] Minimum deposit validation passed:', {
+              amount,
+              minDeposit: targetVault.minDeposit,
+              vault: targetVault.name,
+            });
           }
 
           // Get decimals from centralized config

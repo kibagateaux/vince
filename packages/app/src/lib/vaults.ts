@@ -4,7 +4,7 @@
  * Each vault is deployed on a specific chain and supports certain cause categories.
  */
 
-import { Chain, CHAIN_NAME_TO_ID, CHAIN_DISPLAY_NAMES, type Address } from '@bangui/types';
+import { Chain, CHAIN_NAME_TO_ID, CHAIN_DISPLAY_NAMES, getTokenDecimals, type Address } from '@bangui/types';
 
 export interface VaultMetadata {
   /** Unique vault identifier */
@@ -224,4 +224,49 @@ export const findBestVault = (
 
   // Fall back to primary vault on user's chain
   return getPrimaryVaultByChainId(userChainId);
+};
+
+/**
+ * Validates that a deposit amount meets the vault's minimum requirement.
+ * Compares amounts using token decimals for accurate comparison.
+ *
+ * @param vault - The vault to deposit into
+ * @param humanAmount - The deposit amount in human-readable format (e.g., "0.001")
+ * @returns Object with isValid boolean and error message if invalid
+ */
+export const validateMinimumDeposit = (
+  vault: VaultMetadata,
+  humanAmount: string
+): { isValid: boolean; error?: string } => {
+  const decimals = getTokenDecimals(vault.reserveToken);
+  const minDeposit = vault.minDeposit;
+
+  // Convert both amounts to smallest unit for accurate comparison
+  const parseToSmallestUnit = (amount: string, dec: number): bigint => {
+    const [whole = '0', fraction = ''] = amount.split('.');
+    const paddedFraction = fraction.padEnd(dec, '0').slice(0, dec);
+    return BigInt(whole + paddedFraction);
+  };
+
+  const depositAmountSmallest = parseToSmallestUnit(humanAmount, decimals);
+  const minDepositSmallest = parseToSmallestUnit(minDeposit, decimals);
+
+  if (depositAmountSmallest < minDepositSmallest) {
+    return {
+      isValid: false,
+      error: `Deposit amount ${humanAmount} ${vault.reserveToken} is below the minimum deposit of ${minDeposit} ${vault.reserveToken} for ${vault.name}.`,
+    };
+  }
+
+  return { isValid: true };
+};
+
+/**
+ * Gets the minimum deposit amount for a vault in human-readable format.
+ *
+ * @param vault - The vault to get minimum deposit for
+ * @returns Minimum deposit string with token symbol (e.g., "0.0001 WBTC")
+ */
+export const getMinimumDepositDisplay = (vault: VaultMetadata): string => {
+  return `${vault.minDeposit} ${vault.reserveToken}`;
 };
