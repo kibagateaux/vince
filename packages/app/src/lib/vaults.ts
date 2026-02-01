@@ -180,3 +180,48 @@ export const separateVaultsByCurrentChain = (
 export const getVaultChainDisplayName = (vault: VaultMetadata): string => {
   return CHAIN_DISPLAY_NAMES[vault.chain];
 };
+
+/**
+ * Get vaults that support a specific reserve token.
+ */
+export const getVaultsByToken = (token: string): readonly VaultMetadata[] => {
+  const normalizedToken = token.toUpperCase();
+  return VAULTS.filter(v => v.reserveToken.toUpperCase() === normalizedToken);
+};
+
+/**
+ * Find the best vault for a user based on their preferences.
+ * Priority: 1) Matching token on user's chain, 2) Primary vault on user's chain, 3) Any vault with matching token
+ */
+export const findBestVault = (
+  userChainId: number,
+  preferredToken?: string,
+  preferredCauses?: readonly string[]
+): VaultMetadata | undefined => {
+  // Get all vaults on user's chain
+  const chainVaults = getVaultsByChainId(userChainId);
+
+  // If user specified a token, try to find a vault on their chain with that token
+  if (preferredToken) {
+    const normalizedToken = preferredToken.toUpperCase();
+
+    // First: vault on user's chain with matching token
+    const matchOnChain = chainVaults.find(v => v.reserveToken.toUpperCase() === normalizedToken);
+    if (matchOnChain) return matchOnChain;
+
+    // Second: any vault with matching token (user might need to switch chains)
+    const matchAnyChain = VAULTS.find(v => v.reserveToken.toUpperCase() === normalizedToken);
+    if (matchAnyChain) return matchAnyChain;
+  }
+
+  // If user specified causes, try to find a vault that supports them
+  if (preferredCauses && preferredCauses.length > 0) {
+    const matchingCauseVault = chainVaults.find(v =>
+      preferredCauses.some(cause => v.supportedCauses.includes(cause))
+    );
+    if (matchingCauseVault) return matchingCauseVault;
+  }
+
+  // Fall back to primary vault on user's chain
+  return getPrimaryVaultByChainId(userChainId);
+};

@@ -21,6 +21,7 @@ export {
   type VinceRuntimeConfig,
   type ConversationMessage,
   type ResponseContext,
+  type UserIntentAnalysis,
 } from './runtime.js';
 
 export {
