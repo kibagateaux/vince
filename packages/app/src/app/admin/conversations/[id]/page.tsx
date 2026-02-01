@@ -9,8 +9,13 @@ import { FC, useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getConversationDetail, injectAdminMessage } from '../../../../lib/api';
+import {
+  getConversationDetail,
+  injectAdminMessage,
+  getAgentConversationsForUserConversation,
+} from '../../../../lib/api';
 import { ConversationTimeline } from '../../../../components/admin/ConversationTimeline';
+import { AgentConversationTimeline } from '../../../../components/admin/AgentConversationTimeline';
 import type { ConversationHealth, Message, UUID } from '@bangui/types';
 
 /** Health status to color mapping */
@@ -31,12 +36,18 @@ const healthLabels: Record<ConversationHealth, string> = {
   abandoned: 'Abandoned',
 };
 
+/** Tab options */
+type TabId = 'messages' | 'agent-handoffs';
+
 export default function ConversationDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [highlightedMessage, setHighlightedMessage] = useState<string | null>(null);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabId>('messages');
 
   // Admin message state
   const [showInjectForm, setShowInjectForm] = useState(false);
@@ -50,6 +61,16 @@ export default function ConversationDetailPage() {
     enabled: !!id,
     refetchInterval: 10000,
   });
+
+  // Fetch agent conversations for this user conversation
+  const { data: agentConversationsData } = useQuery({
+    queryKey: ['admin', 'agent-conversations-for-user', id],
+    queryFn: () => getAgentConversationsForUserConversation(id),
+    enabled: !!id,
+    refetchInterval: 30000,
+  });
+
+  const agentConversations = agentConversationsData?.conversations ?? [];
 
   // Inject message mutation
   const injectMutation = useMutation({
@@ -162,38 +183,67 @@ export default function ConversationDetailPage() {
       <div className="flex-1 flex">
         {/* Messages panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Timeline visualization */}
-          <div className="bg-white border-b border-gray-200 p-4">
-            <ConversationTimeline
-              conversationId={conversation.id}
-              messageCount={conversation.messages.length}
-              userMessageCount={conversation.messages.filter(m => m.sender === 'user').length}
-              vinceMessageCount={conversation.messages.filter(m => m.sender === 'vince').length}
-              health={conversation.health}
-              timeline={conversation.timeline}
-              onBlobClick={handleBlobClick}
-            />
+          {/* Tab navigation */}
+          <div className="bg-white border-b border-gray-200 px-4">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setActiveTab('messages')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'messages'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Messages ({conversation.messages.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('agent-handoffs')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'agent-handoffs'
+                    ? 'border-amber-600 text-amber-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Agent Handoffs ({agentConversations.length})
+              </button>
+            </div>
           </div>
 
-          {/* Messages list */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {conversation.messages.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-gray-400">
-                No messages in this conversation
+          {/* Messages tab content */}
+          {activeTab === 'messages' && (
+            <>
+              {/* Timeline visualization */}
+              <div className="bg-white border-b border-gray-200 p-4">
+                <ConversationTimeline
+                  conversationId={conversation.id}
+                  messageCount={conversation.messages.length}
+                  userMessageCount={conversation.messages.filter(m => m.sender === 'user').length}
+                  vinceMessageCount={conversation.messages.filter(m => m.sender === 'vince').length}
+                  health={conversation.health}
+                  timeline={conversation.timeline}
+                  onBlobClick={handleBlobClick}
+                />
               </div>
-            ) : (
-              <div className="space-y-4">
-                {conversation.messages.map((message) => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    isHighlighted={highlightedMessage === message.id}
-                    formatTime={formatTime}
-                  />
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
+
+              {/* Messages list */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {conversation.messages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    No messages in this conversation
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {conversation.messages.map((message) => (
+                      <MessageBubble
+                        key={message.id}
+                        message={message}
+                        isHighlighted={highlightedMessage === message.id}
+                        formatTime={formatTime}
+                      />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
           </div>
 
           {/* Inject message form */}
@@ -262,6 +312,50 @@ export default function ConversationDetailPage() {
                   </div>
                 )}
               </form>
+            </div>
+          )}
+            </>
+          )}
+
+          {/* Agent Handoffs tab content */}
+          {activeTab === 'agent-handoffs' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              {agentConversations.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  No agent handoffs for this conversation
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {agentConversations.map((agentConv) => (
+                    <div
+                      key={agentConv.id}
+                      className="bg-white rounded-lg border border-gray-200 p-4"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">
+                            Allocation Request
+                          </span>
+                          <span className="text-xs text-gray-400 font-mono">
+                            {agentConv.allocationRequestId.slice(0, 8)}...
+                          </span>
+                        </div>
+                        <Link
+                          href={`/admin/agent-conversations/${agentConv.id}`}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          View full conversation
+                        </Link>
+                      </div>
+                      <AgentConversationTimeline
+                        messages={agentConv.messages}
+                        status={agentConv.status}
+                        amount={agentConv.amount}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

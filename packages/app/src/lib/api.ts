@@ -153,3 +153,103 @@ export const injectAdminMessage = async (
   });
   return res.json();
 };
+
+// ============================================================================
+// Agent Conversations API (Kincho-Vince)
+// ============================================================================
+
+/** Agent conversation summary for list view */
+export interface AgentConversationSummary {
+  readonly id: string;
+  readonly allocationRequestId: string;
+  readonly startedAt: number;
+  readonly lastMessageAt: number;
+  readonly messageCount: number;
+  readonly vinceMessageCount: number;
+  readonly kinchoMessageCount: number;
+  readonly status: string;
+  readonly amount: string | null;
+  readonly userId: string | null;
+  readonly userConversationId: string | null;
+  readonly latestMessage: string | null;
+}
+
+/** Agent message for detail view */
+export interface AgentMessageDetail {
+  readonly id: string;
+  readonly sender: 'vince' | 'kincho';
+  readonly content: string;
+  readonly metadata: unknown;
+  readonly sentAt: number;
+}
+
+/** Agent conversation detail */
+export interface AgentConversationDetail {
+  readonly id: string;
+  readonly allocationRequestId: string;
+  readonly startedAt: number;
+  readonly lastMessageAt: number;
+  readonly messages: AgentMessageDetail[];
+  readonly allocationRequest: {
+    readonly id: string;
+    readonly userId: string;
+    readonly conversationId: string | null;
+    readonly amount: string;
+    readonly status: string;
+    readonly createdAt: number;
+    readonly userEmail: string | null;
+  } | null;
+}
+
+/** Agent conversation for user conversation tab */
+export interface AgentConversationForUser {
+  readonly id: string;
+  readonly allocationRequestId: string;
+  readonly startedAt: number;
+  readonly lastMessageAt: number;
+  readonly messageCount: number;
+  readonly status: string;
+  readonly amount: string;
+  readonly messages: AgentMessageDetail[];
+}
+
+/**
+ * Gets all agent conversations with allocation request context
+ */
+export const getAgentConversations = async (params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  conversations: AgentConversationSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}> => {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  const res = await fetch(`${API_BASE}/admin/agent-conversations?${query}`);
+  return res.json();
+};
+
+/**
+ * Gets detailed agent conversation with all messages
+ */
+export const getAgentConversationDetail = async (
+  id: string
+): Promise<AgentConversationDetail> => {
+  const res = await fetch(`${API_BASE}/admin/agent-conversations/${id}`);
+  return res.json();
+};
+
+/**
+ * Gets agent conversations for a specific user conversation
+ */
+export const getAgentConversationsForUserConversation = async (
+  conversationId: string
+): Promise<{ conversations: AgentConversationForUser[] }> => {
+  const res = await fetch(
+    `${API_BASE}/admin/agent-conversations/by-conversation/${conversationId}`
+  );
+  return res.json();
+};

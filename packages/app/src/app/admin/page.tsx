@@ -9,7 +9,7 @@ import { FC, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { getConversations, getDashboardStats } from '../../lib/api';
+import { getConversations, getDashboardStats, getAgentConversations } from '../../lib/api';
 import { ConversationTimeline } from '../../components/admin/ConversationTimeline';
 import type { ConversationSummary, ConversationHealth, DashboardStats } from '@bangui/types';
 
@@ -61,7 +61,15 @@ export default function AdminDashboard() {
     refetchInterval: 30000,
   });
 
+  // Fetch agent conversations count
+  const { data: agentConversationsData } = useQuery({
+    queryKey: ['admin', 'agent-conversations'],
+    queryFn: () => getAgentConversations({ limit: 100 }),
+    refetchInterval: 30000,
+  });
+
   const conversations = conversationsData?.conversations ?? [];
+  const agentConversations = agentConversationsData?.conversations ?? [];
   const filteredConversations = filter === 'all'
     ? conversations
     : conversations.filter((c) => c.health === filter);
@@ -96,25 +104,34 @@ export default function AdminDashboard() {
             <h1 className="text-2xl font-bold text-gray-900">Conversations Dashboard</h1>
             <p className="text-sm text-gray-500">Monitor and manage bot conversations</p>
           </div>
-          <Link
-            href="/"
-            className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
-          >
-            Back to Chat
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/admin/agent-conversations"
+              className="rounded-lg bg-amber-100 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-200 transition-colors"
+            >
+              Agent Handoffs ({agentConversations.length})
+            </Link>
+            <Link
+              href="/"
+              className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              Back to Chat
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="p-6">
         {/* Stats Grid */}
         {stats && (
-          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
             <StatCard label="Total Conversations" value={stats.totalConversations} />
             <StatCard label="Active" value={stats.activeConversations} color="text-blue-600" />
             <StatCard label="Successful Deposits" value={stats.successfulDeposits} color="text-green-600" />
             <StatCard label="Frustrated" value={stats.frustratedConversations} color="text-red-600" />
             <StatCard label="Stalled" value={stats.stalledConversations} color="text-yellow-600" />
             <StatCard label="Avg Duration" value={formatDuration(stats.averageDurationMinutes)} />
+            <StatCard label="Agent Handoffs" value={agentConversations.length} color="text-amber-600" />
           </div>
         )}
 
