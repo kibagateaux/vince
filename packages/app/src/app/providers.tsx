@@ -8,6 +8,7 @@
 import { FC, ReactNode } from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { VaultStoreProvider } from '../hooks/useVaultStore';
 
 function makeQueryClient() {
   return new QueryClient({
@@ -77,7 +78,9 @@ export const Providers: FC<ProvidersProps> = ({ children }) => {
         },
       }}
     >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <VaultStoreProvider>{children}</VaultStoreProvider>
+      </QueryClientProvider>
     </PrivyProvider>
   );
 };
