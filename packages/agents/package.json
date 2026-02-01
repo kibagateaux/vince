@@ -2,24 +2,24 @@
   "name": "@bangui/agents",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./index.ts",
+  "types": "./index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./index.ts",
+      "default": "./index.ts"
     },
     "./vince": {
-      "types": "./dist/vince/index.d.ts",
-      "import": "./dist/vince/index.js"
+      "types": "./vince/index.ts",
+      "default": "./vince/index.ts"
     },
     "./kincho": {
-      "types": "./dist/kincho/index.d.ts",
-      "import": "./dist/kincho/index.js"
+      "types": "./kincho/index.ts",
+      "default": "./kincho/index.ts"
     },
     "./shared": {
-      "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.js"
+      "types": "./shared/index.ts",
+      "default": "./shared/index.ts"
     }
   },
   "scripts": {

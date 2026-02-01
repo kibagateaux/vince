@@ -30,7 +30,7 @@ export {
   type VinceRuntimeConfig,
   type ConversationMessage,
   type ResponseContext,
-} from './vince/index.js';
+} from './vince/index';
 
 // Kincho exports
 export {
@@ -59,7 +59,7 @@ export {
   type SubagentProposal,
   type AllocationModification,
   type AuditEntry,
-} from './kincho/index.js';
+} from './kincho/index';
 
 // Shared utilities
-export * from './shared/index.js';
+export * from './shared/index';
