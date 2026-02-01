@@ -24,6 +24,7 @@ import {
   getChainDisplayName,
 } from '../lib/chains';
 import type { ActionPrompt, Chain, BigIntString } from '@bangui/types';
+import { getTokenDecimals as getTokenDecimalsFromTypes, isTokenSupported } from '@bangui/types';
 import type { Session } from '../lib/types';
 
 // Dynamic import for 3D scene (SSR: false)
@@ -45,26 +46,103 @@ const VinceScene = dynamic(
 );
 
 /**
- * Parses human-readable amount to wei string
+ * Parses human-readable amount to token's smallest unit (wei for ETH, satoshis for BTC, etc.)
+ * CRITICAL: This function must be called with the correct decimals for the token.
+ *
+ * @param amount - Human-readable amount (e.g., "0.001")
+ * @param decimals - Token decimals (e.g., 18 for ETH, 8 for WBTC)
+ * @param token - Token symbol for logging (optional)
+ * @returns Amount in smallest unit as BigIntString
  */
-const parseAmountToWei = (amount: string, decimals: number): BigIntString => {
+const parseAmountToWei = (amount: string, decimals: number, token?: string): BigIntString => {
   const [whole = '0', fraction = ''] = amount.split('.');
   const paddedFraction = fraction.padEnd(decimals, '0').slice(0, decimals);
-  return `${whole}${paddedFraction}` as BigIntString;
+  const result = `${whole}${paddedFraction}` as BigIntString;
+
+  // Log conversion for debugging - this is critical for catching decimal errors
+  console.log('[DEPOSIT AMOUNT CONVERSION]', {
+    input: amount,
+    token: token ?? 'unknown',
+    decimals,
+    output: result,
+    // Show expected value for verification
+    expectedValue: `${amount} ${token ?? ''} = ${result} (smallest units)`,
+  });
+
+  return result;
 };
 
 /**
- * Gets token decimals for common tokens
+ * Formats amount from smallest unit back to human-readable for verification.
+ * @param amountWei - Amount in smallest unit
+ * @param decimals - Token decimals
+ * @returns Human-readable amount string
+ */
+const formatWeiToAmount = (amountWei: string, decimals: number): string => {
+  const padded = amountWei.padStart(decimals + 1, '0');
+  const whole = padded.slice(0, -decimals) || '0';
+  const fraction = padded.slice(-decimals);
+  return `${whole}.${fraction}`.replace(/\.?0+$/, '') || '0';
+};
+
+/**
+ * Gets token decimals using centralized config from @bangui/types.
+ * CRITICAL: This is the single source of truth for token decimals.
+ * Wrong decimals = wrong transaction amounts = potential loss of funds.
+ *
+ * @param token - Token symbol (case-insensitive)
+ * @returns Token decimals
+ * @throws Error if token is not supported
  */
 const getTokenDecimals = (token: string): number => {
-  const decimalsMap: Record<string, number> = {
-    ETH: 18,
-    WETH: 18,
-    USDC: 6,
-    USDT: 6,
-    DAI: 18,
-  };
-  return decimalsMap[token.toUpperCase()] ?? 18;
+  // Use centralized config - throws if token unknown
+  return getTokenDecimalsFromTypes(token);
+};
+
+/**
+ * Validates that amount conversion is correct by round-tripping.
+ * This catches any decimal handling bugs before transaction is sent.
+ *
+ * @param humanAmount - Original human-readable amount
+ * @param weiAmount - Converted amount in smallest units
+ * @param decimals - Token decimals used for conversion
+ * @param token - Token symbol for error messages
+ * @throws Error if round-trip doesn't match
+ */
+const validateAmountConversion = (
+  humanAmount: string,
+  weiAmount: string,
+  decimals: number,
+  token: string
+): void => {
+  // Round-trip: convert back to human-readable and compare
+  const roundTripped = formatWeiToAmount(weiAmount, decimals);
+  const originalNormalized = parseFloat(humanAmount).toString();
+  const roundTrippedNormalized = parseFloat(roundTripped).toString();
+
+  if (originalNormalized !== roundTrippedNormalized) {
+    const error = new Error(
+      `CRITICAL: Amount conversion mismatch for ${token}! ` +
+      `Original: ${humanAmount}, Converted: ${weiAmount}, Round-tripped: ${roundTripped}. ` +
+      `Decimals used: ${decimals}. Transaction BLOCKED.`
+    );
+    console.error('[DEPOSIT AMOUNT VALIDATION FAILED]', {
+      humanAmount,
+      weiAmount,
+      roundTripped,
+      decimals,
+      token,
+    });
+    throw error;
+  }
+
+  console.log('[DEPOSIT AMOUNT VALIDATION PASSED]', {
+    humanAmount,
+    weiAmount,
+    roundTripped,
+    decimals,
+    token,
+  });
 };
 
 export default function ChatPage() {
@@ -275,8 +353,31 @@ export default function ChatPage() {
         setIsProcessingDeposit(true);
         try {
           const walletAddress = user.wallet.address as `0x${string}`;
+
+          // CRITICAL: Validate token is supported before proceeding
+          if (!isTokenSupported(token)) {
+            throw new Error(`Unsupported token: ${token}. Cannot proceed with deposit.`);
+          }
+
+          // Get decimals from centralized config
           const decimals = getTokenDecimals(token);
-          const amountWei = parseAmountToWei(amount, decimals);
+          console.log('[DEPOSIT] Starting amount conversion:', {
+            humanAmount: amount,
+            token,
+            decimals,
+          });
+
+          // Convert to smallest unit
+          const amountWei = parseAmountToWei(amount, decimals, token);
+
+          // CRITICAL: Validate conversion is correct before sending transaction
+          validateAmountConversion(amount, amountWei, decimals, token);
+
+          console.log('[DEPOSIT] Amount validation passed. Proceeding with transaction:', {
+            displayAmount: `${amount} ${token}`,
+            rawAmount: amountWei,
+            decimals,
+          });
 
           // Detect connected chain first
           const provider = await wallet.getEthereumProvider();

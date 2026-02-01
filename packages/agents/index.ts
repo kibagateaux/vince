@@ -26,6 +26,7 @@ export {
   getChainId,
   formatAmount,
   parseAmount,
+  validateAmountConversion,
   type VinceRuntime,
   type VinceRuntimeConfig,
   type ConversationMessage,

@@ -25,7 +25,7 @@ import {
   type ConversationMessage,
   type UserIntentAnalysis,
 } from '@bangui/agents';
-import { Chain, CHAIN_ID_TO_NAME, CHAIN_DISPLAY_NAMES } from '@bangui/types';
+import { Chain, CHAIN_ID_TO_NAME, CHAIN_DISPLAY_NAMES, SUPPORTED_TOKEN_SYMBOLS } from '@bangui/types';
 import type { UUID, ActionPrompt, AgentResponse } from '@bangui/types';
 import {
   separateVaultsByCurrentChain,
@@ -88,12 +88,14 @@ What would you like to explore?`;
 
 /**
  * Parses deposit info from AI-generated response
- * Looks for patterns like "$500 USDC", "500 USDC", etc. in the AI's response
+ * Looks for patterns like "$500 USDC", "500 USDC", "0.001 WBTC" etc. in the AI's response
+ * Uses centralized SUPPORTED_TOKEN_SYMBOLS from @bangui/types
  */
 const parseDepositFromAIResponse = (
   content: string
 ): { amount: string; token: string } | null => {
-  const knownTokens = ['USDC', 'ETH', 'USDT', 'DAI', 'WETH'];
+  // Use centralized token list - includes WBTC and all supported tokens
+  const knownTokens = SUPPORTED_TOKEN_SYMBOLS as unknown as string[];
   const tokenPattern = knownTokens.join('|');
 
   // Patterns to find deposit amounts in AI responses
@@ -430,9 +432,11 @@ Would you like to learn more about any of these, or explore other options?`;
 
 /**
  * Parse deposit intent from user message
+ * Uses centralized SUPPORTED_TOKEN_SYMBOLS from @bangui/types
  */
 const parseDepositIntent = (content: string): { amount: string; token: string } | null => {
-  const knownTokens = ['USDC', 'ETH', 'USDT', 'DAI', 'WETH'];
+  // Use centralized token list - includes WBTC and all supported tokens
+  const knownTokens = SUPPORTED_TOKEN_SYMBOLS as unknown as string[];
   const tokenPattern = knownTokens.join('|');
 
   const patterns = [

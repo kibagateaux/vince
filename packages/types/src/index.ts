@@ -80,6 +80,73 @@ export const CHAIN_RPC_URLS: Record<Chain, string> = {
 /** Testnet chains */
 export const TESTNET_CHAINS: readonly Chain[] = [Chain.SEPOLIA, Chain.BASE_SEPOLIA] as const;
 
+// ============================================================================
+// Token Configuration - SINGLE SOURCE OF TRUTH FOR TOKEN DECIMALS
+// ============================================================================
+
+/**
+ * CRITICAL: Token decimal configuration for accurate amount conversions.
+ * NEVER hardcode decimals elsewhere - always use this map.
+ * Wrong decimals = wrong transaction amounts = lost funds.
+ */
+export const TOKEN_DECIMALS: Readonly<Record<string, number>> = {
+  // Native/wrapped ETH
+  ETH: 18,
+  WETH: 18,
+  // Stablecoins
+  USDC: 6,
+  USDT: 6,
+  DAI: 18,
+  // Bitcoin
+  WBTC: 8,
+  BTC: 8,
+  // Other common tokens
+  LINK: 18,
+  UNI: 18,
+  AAVE: 18,
+} as const;
+
+/** All supported token symbols for deposit parsing */
+export const SUPPORTED_TOKEN_SYMBOLS = Object.keys(TOKEN_DECIMALS) as readonly string[];
+
+/**
+ * Gets token decimals with strict validation.
+ * Throws an error for unknown tokens to prevent silent failures.
+ * @param token - Token symbol (case-insensitive)
+ * @returns Token decimals
+ * @throws Error if token is unknown
+ */
+export const getTokenDecimals = (token: string): number => {
+  const upperToken = token.toUpperCase();
+  const decimals = TOKEN_DECIMALS[upperToken];
+  if (decimals === undefined) {
+    throw new Error(
+      `Unknown token "${token}". Add it to TOKEN_DECIMALS in @bangui/types before using. ` +
+      `Supported tokens: ${SUPPORTED_TOKEN_SYMBOLS.join(', ')}`
+    );
+  }
+  return decimals;
+};
+
+/**
+ * Safely gets token decimals, returns undefined for unknown tokens.
+ * Use this when you want to handle unknown tokens gracefully.
+ * @param token - Token symbol (case-insensitive)
+ * @returns Token decimals or undefined if unknown
+ */
+export const getTokenDecimalsSafe = (token: string): number | undefined => {
+  return TOKEN_DECIMALS[token.toUpperCase()];
+};
+
+/**
+ * Checks if a token is supported (has known decimals).
+ * @param token - Token symbol (case-insensitive)
+ * @returns true if token is in TOKEN_DECIMALS
+ */
+export const isTokenSupported = (token: string): boolean => {
+  return token.toUpperCase() in TOKEN_DECIMALS;
+};
+
 /** Mainnet chains */
 export const MAINNET_CHAINS: readonly Chain[] = [Chain.ETHEREUM, Chain.POLYGON, Chain.ARBITRUM, Chain.BASE] as const;
 

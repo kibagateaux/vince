@@ -42,5 +42,6 @@ export {
   getChainId,
   formatAmount,
   parseAmount,
+  validateAmountConversion,
   type BuildAllocateTxInput,
 } from './subagents/tx-generator.js';
