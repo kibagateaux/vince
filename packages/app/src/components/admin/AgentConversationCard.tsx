@@ -8,6 +8,7 @@
 import { FC } from 'react';
 import Link from 'next/link';
 import type { AgentConversationSummary } from '../../lib/api';
+import { getAddressExplorerUrl, getChainDisplayName } from '../../lib/chains';
 
 /** Status badge colors */
 const statusColors: Record<string, { bg: string; text: string }> = {
@@ -57,7 +58,14 @@ export const AgentConversationCard: FC<AgentConversationCardProps> = ({
     }
   };
 
+  const formatAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
   const colors = statusColors[conversation.status] ?? statusColors.unknown;
+  const explorerUrl = conversation.vaultAddress && conversation.chainId
+    ? getAddressExplorerUrl(conversation.chainId, conversation.vaultAddress)
+    : null;
 
   return (
     <Link
@@ -80,6 +88,34 @@ export const AgentConversationCard: FC<AgentConversationCardProps> = ({
           {formatTime(conversation.lastMessageAt)}
         </span>
       </div>
+
+      {/* Vault address */}
+      {conversation.vaultAddress && (
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-xs text-gray-400">Vault:</span>
+          {explorerUrl ? (
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs font-mono text-blue-600 hover:underline"
+              title={conversation.vaultAddress}
+            >
+              {formatAddress(conversation.vaultAddress)}
+            </a>
+          ) : (
+            <span className="text-xs font-mono text-gray-600" title={conversation.vaultAddress}>
+              {formatAddress(conversation.vaultAddress)}
+            </span>
+          )}
+          {conversation.chainId && (
+            <span className="text-xs text-gray-400">
+              ({getChainDisplayName(conversation.chainId)})
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Message stats */}
       <div className="flex items-center gap-4 mb-3">

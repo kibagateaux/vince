@@ -169,6 +169,8 @@ export interface AgentConversationSummary {
   readonly kinchoMessageCount: number;
   readonly status: string;
   readonly amount: string | null;
+  readonly vaultAddress: string | null;
+  readonly chainId: number | null;
   readonly userId: string | null;
   readonly userConversationId: string | null;
   readonly latestMessage: string | null;
@@ -195,6 +197,8 @@ export interface AgentConversationDetail {
     readonly userId: string;
     readonly conversationId: string | null;
     readonly amount: string;
+    readonly vaultAddress: string | null;
+    readonly chainId: number | null;
     readonly status: string;
     readonly createdAt: number;
     readonly userEmail: string | null;

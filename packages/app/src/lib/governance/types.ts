@@ -104,6 +104,10 @@ export interface Proposal {
     messages: ProposalMessage[];
     lastUpdated: Date;
   };
+  /** ERC4626 vault address for this allocation */
+  vaultAddress: Address | null;
+  /** Chain ID for the vault */
+  chainId: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -74,3 +74,27 @@ export const getChainDisplayName = (chainId: number): string => {
   const chain = CHAIN_MAP[chainId];
   return chain?.name ?? `Chain ${chainId}`;
 };
+
+/**
+ * Get the block explorer base URL for a chain.
+ */
+export const getBlockExplorerUrl = (chainId: number): string | null => {
+  const chain = CHAIN_MAP[chainId];
+  return chain?.blockExplorers?.default?.url ?? null;
+};
+
+/**
+ * Get a block explorer URL for an address on a specific chain.
+ */
+export const getAddressExplorerUrl = (chainId: number, address: string): string | null => {
+  const baseUrl = getBlockExplorerUrl(chainId);
+  return baseUrl ? `${baseUrl}/address/${address}` : null;
+};
+
+/**
+ * Get a block explorer URL for a transaction on a specific chain.
+ */
+export const getTxExplorerUrl = (chainId: number, txHash: string): string | null => {
+  const baseUrl = getBlockExplorerUrl(chainId);
+  return baseUrl ? `${baseUrl}/tx/${txHash}` : null;
+};

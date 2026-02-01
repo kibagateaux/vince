@@ -7,6 +7,7 @@
 
 import { FC } from 'react';
 import type { Proposal } from '../../lib/governance/types';
+import { getAddressExplorerUrl, getChainDisplayName } from '../../lib/chains';
 
 interface ProposalCardProps {
   proposal: Proposal;
@@ -111,6 +112,29 @@ export const ProposalCard: FC<ProposalCardProps> = ({ proposal, onClick }) => {
           {proposal.user.riskTolerance}
         </span>
       </div>
+
+      {/* Vault Info */}
+      {proposal.vaultAddress && (
+        <div className="flex items-center gap-2 mb-4 text-sm">
+          <span className="text-gray-500">Vault:</span>
+          {proposal.chainId ? (
+            <a
+              href={getAddressExplorerUrl(proposal.chainId, proposal.vaultAddress) ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-blue-600 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {formatAddress(proposal.vaultAddress)}
+            </a>
+          ) : (
+            <span className="font-mono text-gray-700">{formatAddress(proposal.vaultAddress)}</span>
+          )}
+          {proposal.chainId && (
+            <span className="text-xs text-gray-400">({getChainDisplayName(proposal.chainId)})</span>
+          )}
+        </div>
+      )}
 
       {/* Warning Banner */}
       {proposal.kinchoAnalysis.humanOverrideRequired && (
