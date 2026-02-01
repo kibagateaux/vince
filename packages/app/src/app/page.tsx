@@ -11,6 +11,7 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { createWalletClient, custom, type Chain as ViemChain } from 'viem';
 import { useChat } from '../hooks/useChat';
 import { useVinceState } from '../hooks/useVinceState';
+import { useVaultStore } from '../hooks/useVaultStore';
 import { connectSession, prepareDeposit, confirmDeposit } from '../lib/api';
 import { Message } from '../components/Message';
 import {
@@ -70,6 +71,7 @@ export default function ChatPage() {
   const { authenticated, user, login } = usePrivy();
   const { wallets } = useWallets();
   const { messages, connectionState, isWaitingForResponse, sendMessage, connect } = useChat();
+  const { selectedVault, selectVaultByChain, getSelectedTokenSymbol } = useVaultStore();
   const [input, setInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [session, setSession] = useState<Session | null>(null);
@@ -80,6 +82,13 @@ export default function ChatPage() {
   const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sync vault selection with chain changes
+  useEffect(() => {
+    if (currentChainId) {
+      selectVaultByChain(currentChainId);
+    }
+  }, [currentChainId, selectVaultByChain]);
 
   // Check if user is on the wrong network
   const isWrongNetwork = currentChainId !== null && !isDefaultChain(currentChainId);
@@ -177,12 +186,12 @@ export default function ChatPage() {
     (e: React.FormEvent) => {
       e.preventDefault();
       if (!input.trim()) return;
-      // Pass current chain ID so Vince can filter vaults appropriately
-      sendMessage(input.trim(), currentChainId ?? undefined);
+      // Pass current chain ID and selected vault ID so Vince uses the correct token
+      sendMessage(input.trim(), currentChainId ?? undefined, selectedVault?.id);
       setInput('');
       setSelectedOptions(new Set());
     },
-    [input, sendMessage, currentChainId]
+    [input, sendMessage, currentChainId, selectedVault?.id]
   );
 
   const handleToggleOption = useCallback(
@@ -253,13 +262,13 @@ export default function ChatPage() {
         };
 
         if (!amount || !token) {
-          sendMessage('I want to make a deposit', currentChainId ?? undefined);
+          sendMessage('I want to make a deposit', currentChainId ?? undefined, selectedVault?.id);
           return;
         }
 
         const wallet = wallets.find(w => w.address === user.wallet?.address);
         if (!wallet) {
-          sendMessage('Could not find connected wallet. Please reconnect.', currentChainId ?? undefined);
+          sendMessage('Could not find connected wallet. Please reconnect.', currentChainId ?? undefined, selectedVault?.id);
           return;
         }
 
@@ -321,7 +330,7 @@ export default function ChatPage() {
                     }],
                   });
                 } catch (addError) {
-                  sendMessage(`Please add ${targetChainDisplayName} network to your wallet and try again.`, currentChainId ?? undefined);
+                  sendMessage(`Please add ${targetChainDisplayName} network to your wallet and try again.`, currentChainId ?? undefined, selectedVault?.id);
                   return;
                 }
               } else {
@@ -376,27 +385,28 @@ export default function ChatPage() {
           });
 
           if (txHash) {
-            await confirmDeposit(depositId, txHash);
+            // Pass conversationId so Kincho's decision is posted to the user's chat
+            await confirmDeposit(depositId, txHash, session.conversationId);
             setDepositConfirmed(true);
-            sendMessage(`My deposit of ${amount} ${token} on ${targetChainDisplayName} was confirmed! Transaction: ${txHash}`, targetChainId);
+            sendMessage(`My deposit of ${amount} ${token} on ${targetChainDisplayName} was confirmed! Transaction: ${txHash}`, targetChainId, selectedVault?.id);
           }
         } catch (error) {
           console.error('Deposit failed:', error);
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
-            sendMessage('Transaction was cancelled.', currentChainId ?? undefined);
+            sendMessage('Transaction was cancelled.', currentChainId ?? undefined, selectedVault?.id);
           } else if (errorMessage.includes('not configured')) {
             // Server configuration error
-            sendMessage('Deposit service is not properly configured. Please contact support.', currentChainId ?? undefined);
+            sendMessage('Deposit service is not properly configured. Please contact support.', currentChainId ?? undefined, selectedVault?.id);
           } else {
-            sendMessage(`There was an issue with the deposit: ${errorMessage}`, currentChainId ?? undefined);
+            sendMessage(`There was an issue with the deposit: ${errorMessage}`, currentChainId ?? undefined, selectedVault?.id);
           }
         } finally {
           setIsProcessingDeposit(false);
         }
       }
     },
-    [session, user, wallets, sendMessage, currentChainId]
+    [session, user, wallets, sendMessage, currentChainId, selectedVault?.id]
   );
 
   // Show login if not authenticated

@@ -8,7 +8,7 @@
     "packages/protocol/lib"
   ],
   "scripts": {
-    "build": "tsc --build && npm run build -w @bangui/app",
+    "build": "npm run build -w @bangui/types && npm run build -w @bangui/app && npm run build -w @bangui/agents",
     "clean": "tsc --build --clean && rm -rf packages/*/dist",
     "dev": "concurrently -n agents,app -c green,magenta \"npm run dev -w @bangui/agents\" \"npm run dev -w @bangui/app\"",
     "start": "concurrently -n agents,app -c green,magenta \"npm run start -w @bangui/agents\" \"npm run start -w @bangui/app\"",

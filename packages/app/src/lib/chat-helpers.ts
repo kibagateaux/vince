@@ -30,6 +30,7 @@ import {
   separateVaultsByCurrentChain,
   getPrimaryVaultByChainId,
   getVaultChainDisplayName,
+  getVaultById,
   type VaultMetadata,
 } from './vaults';
 import { DEFAULT_CHAIN_ID } from './chains';
@@ -184,6 +185,22 @@ Before we dive in, I'd love to learn a bit about what matters to you. I have a f
 };
 
 /**
+ * Resolves the vault to use based on vaultId or chainId
+ */
+const resolveVault = (vaultId?: string, chainId?: number): VaultMetadata | undefined => {
+  // Prefer explicit vaultId if provided
+  if (vaultId) {
+    return getVaultById(vaultId);
+  }
+  // Fall back to primary vault for chain
+  if (chainId) {
+    return getPrimaryVaultByChainId(chainId);
+  }
+  // Default to primary vault for default chain
+  return getPrimaryVaultByChainId(DEFAULT_CHAIN_ID);
+};
+
+/**
  * Process a user message and generate response
  */
 export const processMessage = async (
@@ -194,10 +211,12 @@ export const processMessage = async (
   state: string,
   vinceRuntime: VinceRuntime | null,
   questionId?: string,
-  chainId?: number
+  chainId?: number,
+  vaultId?: string
 ): Promise<AgentResponse> => {
-  // Use provided chainId or fall back to default
-  const userChainId = chainId ?? DEFAULT_CHAIN_ID;
+  // Resolve vault from vaultId or chainId
+  const resolvedVault = resolveVault(vaultId, chainId);
+  const userChainId = resolvedVault?.chainId ?? chainId ?? DEFAULT_CHAIN_ID;
   const messageTimestamp = Date.now();
 
   // Determine which question is being answered
@@ -230,10 +249,11 @@ export const processMessage = async (
       content,
       messageTimestamp,
       vinceRuntime,
-      userChainId
+      userChainId,
+      resolvedVault
     );
   } else if (state === 'investment_suggestions') {
-    return handleInvestmentQuery(db, userId, conversationId, content, vinceRuntime, userChainId);
+    return handleInvestmentQuery(db, userId, conversationId, content, vinceRuntime, userChainId, resolvedVault);
   }
 
   // Default response - use AI if available
@@ -274,7 +294,8 @@ const handleQuestionnaireResponse = async (
   content: string,
   messageTimestamp: number,
   vinceRuntime: VinceRuntime | null,
-  userChainId: number
+  userChainId: number,
+  _resolvedVault?: VaultMetadata
 ): Promise<AgentResponse> => {
   const existingResponses = await getQuestionnaireResponses(db, userId);
   const answeredIds = new Set(existingResponses.map((r) => r.question_id));
@@ -509,6 +530,7 @@ const parseDepositIntent = (content: string): { amount: string; token: string } 
  * Generates an AI response using VinceRuntime, with appropriate fallbacks
  * @param state - The conversation state: 'investing' for general queries, 'persuading' for hesitant users
  * @param userChainId - The user's current chain ID for vault targeting
+ * @param resolvedVault - Pre-resolved vault to use (takes precedence over chainId lookup)
  */
 const generateAIResponse = async (
   db: Db,
@@ -516,10 +538,12 @@ const generateAIResponse = async (
   userMessage: string,
   vinceRuntime: VinceRuntime | null,
   state: 'investing' | 'persuading',
-  userChainId?: number
+  userChainId?: number,
+  resolvedVault?: VaultMetadata
 ): Promise<{ content: string; actions?: ActionPrompt[] }> => {
   const chainId = userChainId ?? DEFAULT_CHAIN_ID;
-  const primaryVault = getPrimaryVaultByChainId(chainId);
+  // Use resolved vault if provided, otherwise fall back to primary vault for chain
+  const primaryVault = resolvedVault ?? getPrimaryVaultByChainId(chainId);
   const targetChain = primaryVault?.chain ?? CHAIN_ID_TO_NAME[chainId] ?? Chain.SEPOLIA;
   let responseContent: string;
 
@@ -567,14 +591,16 @@ const generateAIResponse = async (
   });
 
   if (depositInfo) {
-    console.log('[DEBUG] Attaching deposit action for', depositInfo.amount, depositInfo.token, 'on', targetChain);
+    // Use the vault's reserve token symbol, not the parsed token from text
+    const tokenSymbol = primaryVault?.reserveToken ?? depositInfo.token;
+    console.log('[DEBUG] Attaching deposit action for', depositInfo.amount, tokenSymbol, 'on', targetChain);
     const depositActions: ActionPrompt[] = [
       {
         type: 'deposit',
         data: {
           action: 'sign',
           amount: depositInfo.amount,
-          token: depositInfo.token,
+          token: tokenSymbol,
           chain: targetChain,
           chainId,
           vaultId: primaryVault?.id,
@@ -597,12 +623,13 @@ const handleInvestmentQuery = async (
   conversationId: string,
   content: string,
   vinceRuntime: VinceRuntime | null,
-  userChainId: number
+  userChainId: number,
+  resolvedVault?: VaultMetadata
 ): Promise<AgentResponse> => {
   console.log('[DEBUG] handleInvestmentQuery called with:', content.substring(0, 50));
 
-  // Get the primary vault for user's current chain
-  const primaryVault = getPrimaryVaultByChainId(userChainId);
+  // Use resolved vault if provided, otherwise get primary vault for chain
+  const primaryVault = resolvedVault ?? getPrimaryVaultByChainId(userChainId);
   const targetChain = primaryVault?.chain ?? CHAIN_ID_TO_NAME[userChainId] ?? Chain.SEPOLIA;
   const targetChainId = primaryVault?.chainId ?? userChainId;
 
@@ -612,8 +639,10 @@ const handleInvestmentQuery = async (
 
   if (depositIntent) {
     const chainDisplayName = CHAIN_DISPLAY_NAMES[targetChain];
+    // Use the vault's reserve token symbol, not the parsed token from text
+    const tokenSymbol = primaryVault?.reserveToken ?? depositIntent.token;
     // User specified amount and token - prompt to confirm and sign
-    const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${depositIntent.token} on ${chainDisplayName}.
+    const responseContent = `Great! You'd like to donate ${depositIntent.amount} ${tokenSymbol} on ${chainDisplayName}.
 
 Click the button below to review and sign the transaction. Your funds will be allocated according to your preferences once confirmed.`;
 
@@ -623,7 +652,7 @@ Click the button below to review and sign the transaction. Your funds will be al
         data: {
           action: 'sign',
           amount: depositIntent.amount,
-          token: depositIntent.token,
+          token: tokenSymbol,
           chain: targetChain,
           chainId: targetChainId,
           vaultId: primaryVault?.id,
@@ -649,7 +678,7 @@ Click the button below to review and sign the transaction. Your funds will be al
 
   // For all other messages, let AI determine intent and respond appropriately
   // AI will intelligently handle: questions, hesitation, general conversation, etc.
-  const aiResponse = await generateAIResponse(db, conversationId, content, vinceRuntime, 'investing', userChainId);
+  const aiResponse = await generateAIResponse(db, conversationId, content, vinceRuntime, 'investing', userChainId, primaryVault);
 
   await createMessage(db, {
     conversationId,

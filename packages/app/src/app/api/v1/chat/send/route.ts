@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     conversationId: UUID;
     userId: UUID;
     content: string;
-    metadata?: { questionId?: string; chainId?: number };
+    metadata?: { questionId?: string; chainId?: number; vaultId?: string };
   };
 
   if (!conversationId || !userId || !content) {
@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
     conversation.state,
     runtime,
     metadata?.questionId,
-    metadata?.chainId
+    metadata?.chainId,
+    metadata?.vaultId
   );
 
   // Get updated messages
