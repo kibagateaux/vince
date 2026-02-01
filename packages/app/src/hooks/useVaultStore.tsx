@@ -22,8 +22,12 @@ import {
   type VaultStats,
   type TokenMetadata,
   getTokenMetadata,
+  getVaultAddress,
+  getVaultChainId,
+  getVaultAllocationInfo,
 } from '../lib/vault-store';
 import type { VaultMetadata } from '../lib/vaults';
+import type { Address } from '@bangui/types';
 
 // ============================================================================
 // Context Types
@@ -34,6 +38,8 @@ interface VaultStoreContextValue extends VaultStoreState {
   selectVault: (vaultId: string) => void;
   /** Select the primary vault for a chain */
   selectVaultByChain: (chainId: number) => void;
+  /** Select a vault by its contract address */
+  selectVaultByAddress: (address: Address) => void;
   /** Clear vault selection */
   clearSelection: () => void;
   /** Fetch stats for the selected vault */
@@ -42,6 +48,12 @@ interface VaultStoreContextValue extends VaultStoreState {
   getSelectedTokenSymbol: () => string;
   /** Get token metadata for the selected vault */
   getSelectedTokenMetadata: () => TokenMetadata | null;
+  /** Get vault address for the selected vault */
+  getSelectedVaultAddress: () => Address | null;
+  /** Get chain ID for the selected vault */
+  getSelectedVaultChainId: () => number | null;
+  /** Get vault info for allocation requests */
+  getSelectedVaultAllocationInfo: () => { vaultAddress: Address | null; chainId: number | null; reserveToken: string };
 }
 
 const VaultStoreContext = createContext<VaultStoreContextValue | null>(null);
@@ -78,6 +90,10 @@ export const VaultStoreProvider: FC<VaultStoreProviderProps> = ({
 
   const selectVaultByChain = useCallback((chainId: number) => {
     dispatch({ type: 'SELECT_VAULT_BY_CHAIN', chainId });
+  }, []);
+
+  const selectVaultByAddress = useCallback((address: Address) => {
+    dispatch({ type: 'SELECT_VAULT_BY_ADDRESS', address });
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -118,14 +134,30 @@ export const VaultStoreProvider: FC<VaultStoreProviderProps> = ({
     return getTokenMetadata(state.selectedVault.reserveToken);
   }, [state.selectedVault]);
 
+  const getSelectedVaultAddress = useCallback((): Address | null => {
+    return getVaultAddress(state.selectedVault);
+  }, [state.selectedVault]);
+
+  const getSelectedVaultChainId = useCallback((): number | null => {
+    return getVaultChainId(state.selectedVault);
+  }, [state.selectedVault]);
+
+  const getSelectedVaultAllocationInfo = useCallback(() => {
+    return getVaultAllocationInfo(state.selectedVault);
+  }, [state.selectedVault]);
+
   const value: VaultStoreContextValue = {
     ...state,
     selectVault,
     selectVaultByChain,
+    selectVaultByAddress,
     clearSelection,
     fetchStats,
     getSelectedTokenSymbol,
     getSelectedTokenMetadata,
+    getSelectedVaultAddress,
+    getSelectedVaultChainId,
+    getSelectedVaultAllocationInfo,
   };
 
   return (
@@ -173,4 +205,25 @@ export const useSelectedTokenSymbol = (): string => {
 export const useSelectedTokenMetadata = (): TokenMetadata | null => {
   const { getSelectedTokenMetadata } = useVaultStore();
   return getSelectedTokenMetadata();
+};
+
+/**
+ * Hook to get the vault address for the selected vault
+ */
+export const useSelectedVaultAddress = (): Address | null => {
+  const { getSelectedVaultAddress } = useVaultStore();
+  return getSelectedVaultAddress();
+};
+
+/**
+ * Hook to get allocation info for the selected vault
+ * Useful for creating allocation requests with proper vault context
+ */
+export const useVaultAllocationInfo = (): {
+  vaultAddress: Address | null;
+  chainId: number | null;
+  reserveToken: string;
+} => {
+  const { getSelectedVaultAllocationInfo } = useVaultStore();
+  return getSelectedVaultAllocationInfo();
 };

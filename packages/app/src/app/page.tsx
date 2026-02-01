@@ -385,7 +385,8 @@ export default function ChatPage() {
           });
 
           if (txHash) {
-            await confirmDeposit(depositId, txHash);
+            // Pass conversationId so Kincho's decision is posted to the user's chat
+            await confirmDeposit(depositId, txHash, session.conversationId);
             setDepositConfirmed(true);
             sendMessage(`My deposit of ${amount} ${token} on ${targetChainDisplayName} was confirmed! Transaction: ${txHash}`, targetChainId, selectedVault?.id);
           }

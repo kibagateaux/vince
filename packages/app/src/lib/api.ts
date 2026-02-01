@@ -74,15 +74,17 @@ export const prepareDeposit = async (params: {
 
 /**
  * Confirms deposit after transaction
+ * If conversationId is provided, Kincho's decision will be posted to the user's chat
  */
 export const confirmDeposit = async (
   depositId: UUID,
-  txHash: string
-): Promise<{ success: boolean }> => {
+  txHash: string,
+  conversationId?: UUID
+): Promise<{ success: boolean; kinchoDecision?: unknown; message?: string }> => {
   const res = await fetch(`${API_BASE}/deposits/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ depositId, txHash }),
+    body: JSON.stringify({ depositId, txHash, conversationId }),
   });
   return res.json();
 };

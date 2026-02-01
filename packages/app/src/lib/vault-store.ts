@@ -5,7 +5,10 @@
  */
 
 import type { Address, Chain } from '@bangui/types';
-import { VAULTS, type VaultMetadata, getVaultById, getPrimaryVaultByChainId } from './vaults';
+import { VAULTS, type VaultMetadata, getVaultById, getPrimaryVaultByChainId, getVaultByAddress } from './vaults';
+
+// Re-export for convenience
+export { getVaultByAddress };
 
 // ============================================================================
 // Token Metadata Types
@@ -140,6 +143,7 @@ export const initialVaultStoreState: VaultStoreState = {
 export type VaultStoreAction =
   | { type: 'SELECT_VAULT'; vaultId: string }
   | { type: 'SELECT_VAULT_BY_CHAIN'; chainId: number }
+  | { type: 'SELECT_VAULT_BY_ADDRESS'; address: Address }
   | { type: 'CLEAR_SELECTION' }
   | { type: 'SET_STATS'; stats: VaultStats }
   | { type: 'SET_LOADING_STATS'; isLoading: boolean }
@@ -186,6 +190,21 @@ export const vaultStoreReducer = (
       const vault = getPrimaryVaultByChainId(action.chainId);
       if (!vault) {
         return { ...state, error: `No vault for chain ID: ${action.chainId}` };
+      }
+      const tokenMetadata = getTokenMetadata(vault.reserveToken);
+      return {
+        ...state,
+        selectedVault: vault,
+        selectedTokenMetadata: tokenMetadata,
+        selectedVaultStats: null,
+        error: null,
+      };
+    }
+
+    case 'SELECT_VAULT_BY_ADDRESS': {
+      const vault = getVaultByAddress(action.address);
+      if (!vault) {
+        return { ...state, error: `No vault for address: ${action.address}` };
       }
       const tokenMetadata = getTokenMetadata(vault.reserveToken);
       return {
@@ -288,4 +307,33 @@ export const parseTokenAmount = (amount: string, symbol: string): bigint => {
   const [whole = '0', fraction = ''] = amount.split('.');
   const paddedFraction = fraction.padEnd(decimals, '0').slice(0, decimals);
   return BigInt(`${whole}${paddedFraction}`);
+};
+
+/**
+ * Gets the vault address for a vault
+ */
+export const getVaultAddress = (vault: VaultMetadata | null): Address | null => {
+  return vault?.address ?? null;
+};
+
+/**
+ * Gets the chain ID for a vault
+ */
+export const getVaultChainId = (vault: VaultMetadata | null): number | null => {
+  return vault?.chainId ?? null;
+};
+
+/**
+ * Gets vault metadata for use in allocation requests and proposals
+ */
+export const getVaultAllocationInfo = (vault: VaultMetadata | null): {
+  vaultAddress: Address | null;
+  chainId: number | null;
+  reserveToken: string;
+} => {
+  return {
+    vaultAddress: vault?.address ?? null,
+    chainId: vault?.chainId ?? null,
+    reserveToken: vault?.reserveToken ?? 'ETH',
+  };
 };
