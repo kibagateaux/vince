@@ -28,6 +28,12 @@ import {
 import { encodeFunctionData } from 'viem';
 import { Chain, getChainName, getChainId } from '@bangui/types';
 import type { Address, BigIntString, UnsignedTransaction } from '@bangui/types';
+import {
+  isRegisteredCity,
+  getCityByAddress,
+  selectCitiesForAllocation,
+  type CityProject,
+} from '../../../../../../lib/cities-registry';
 
 // ABI for AiETH.allocate function
 // NOTE: This is duplicated from @bangui/agents/vince tx-generator.ts
@@ -89,6 +95,12 @@ interface LendResponse {
   city: string;
   amount: string;
   reasoning: string;
+  cityInfo?: {
+    name: string;
+    ensName?: string;
+    causeCategory: string;
+    riskRating: number;
+  };
   kinchoAnalysis?: {
     fitScore: number;
     riskScore: number;
@@ -270,6 +282,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<LendRespo
     );
   }
 
+  // Check if city is in registry (warn but don't block)
+  const cityInfo = getCityByAddress(payload.city as Address);
+  if (!cityInfo) {
+    console.warn('[Kincho Lend] City not in registry:', payload.city);
+  } else {
+    console.log('[Kincho Lend] City found in registry:', {
+      name: cityInfo.name,
+      ensName: cityInfo.ensName,
+      causeCategory: cityInfo.causeCategory,
+      riskRating: cityInfo.riskRating,
+    });
+  }
+
   // Validate amount is a valid positive number
   let amountBigInt: bigint;
   try {
@@ -392,6 +417,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<LendRespo
       city: payload.city,
       amount: payload.amount,
       reasoning: payload.reasoning,
+      cityInfo: cityInfo
+        ? {
+            name: cityInfo.name,
+            ensName: cityInfo.ensName,
+            causeCategory: cityInfo.causeCategory,
+            riskRating: cityInfo.riskRating,
+          }
+        : undefined,
       kinchoAnalysis: {
         fitScore: consensus.fitScore,
         riskScore: consensus.riskScore,
