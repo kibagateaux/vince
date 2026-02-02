@@ -63,7 +63,10 @@ export function isKinchoWalletConfigured(): boolean {
  * @throws Error if vault address is not configured
  */
 export function getAllowedVaultAddress(): Address {
-  const vaultAddress = process.env.DAF_CONTRACT_ADDRESS;
+  // Support multiple env var names for flexibility
+  const vaultAddress = process.env.DAF_CONTRACT_ADDRESS
+    || process.env.NEXT_PUBLIC_DAF_CONTRACT_ADDRESS
+    || process.env.NEXT_PUBLIC_DAF_CONTRACT_BASE;
   if (!vaultAddress) {
     throw new Error('DAF_CONTRACT_ADDRESS not configured - Kincho cannot determine allowed vault');
   }
