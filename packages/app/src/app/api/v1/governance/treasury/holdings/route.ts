@@ -134,17 +134,19 @@ async function generateFromDeposits(db: ReturnType<typeof getSupabase>, days: nu
     console.log('[API] Fetched deposits:', deposits?.length ?? 0);
 
     // Build cumulative totals by date
+    // Deposits are stored in wei-like format (10^18 scale), normalize them
     const dateMap = new Map<string, number>();
-    let runningTotal = 0;
+    let runningTotalRaw = 0;
 
     for (const deposit of deposits ?? []) {
       if (!deposit.deposited_at) continue;
 
       const amount = parseFloat(deposit.amount ?? '0');
-      runningTotal += amount;
+      runningTotalRaw += amount;
 
       const dateStr = new Date(deposit.deposited_at).toISOString().split('T')[0]!;
-      dateMap.set(dateStr, runningTotal);
+      // Store normalized value (divide by 10^18)
+      dateMap.set(dateStr, runningTotalRaw / 1e18);
     }
 
     // Generate snapshots for each day in range

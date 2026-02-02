@@ -220,24 +220,55 @@ export async function GET() {
     const db = getSupabase();
 
     // Get deposit stats from database for allocation percentages
-    const { data: deposits, error: depositsError } = await db
-      .from('deposits')
-      .select('amount, vault_address')
-      .eq('status', 'confirmed');
+    // First try with vault_address, fall back to just amount if column doesn't exist
+    let deposits: { amount: string | null; vault_address?: string | null }[] | null = null;
+    let depositsError: any = null;
+
+    try {
+      const result = await db
+        .from('deposits')
+        .select('amount, vault_address')
+        .eq('status', 'confirmed');
+      deposits = result.data;
+      depositsError = result.error;
+    } catch (e) {
+      console.log('[API] vault_address column may not exist, trying without it');
+    }
+
+    // If vault_address query failed, try without it
+    if (depositsError || deposits === null) {
+      console.log('[API] Falling back to query without vault_address');
+      const result = await db
+        .from('deposits')
+        .select('amount')
+        .eq('status', 'confirmed');
+      deposits = result.data?.map(d => ({ ...d, vault_address: null })) ?? null;
+      depositsError = result.error;
+    }
 
     if (depositsError) {
       console.error('[API] Error querying deposits:', depositsError);
     }
 
     // Calculate total deposits per vault
+    // Deposits may be stored in wei-like format (10^18 scale) - we'll normalize later per token
     const vaultTotals = new Map<string, number>();
-    let totalAllDeposits = 0;
+    let totalAllDepositsRaw = 0;
+    let depositsWithVaultAddress = 0;
     for (const d of deposits ?? []) {
       const amount = parseFloat(d.amount ?? '0');
-      const vaultAddr = d.vault_address ?? 'default';
+      const vaultAddr = d.vault_address?.toLowerCase() ?? 'default';
       vaultTotals.set(vaultAddr, (vaultTotals.get(vaultAddr) ?? 0) + amount);
-      totalAllDeposits += amount;
+      totalAllDepositsRaw += amount;
+      if (d.vault_address) depositsWithVaultAddress++;
     }
+
+    console.log('[API] Deposit stats:', {
+      totalDeposits: deposits?.length ?? 0,
+      depositsWithVaultAddress,
+      totalAllDepositsRaw,
+      vaultTotalsKeys: Array.from(vaultTotals.keys()),
+    });
 
     // Build strategies from configured vaults
     const strategies = [];
@@ -251,43 +282,70 @@ export async function GET() {
       // Get on-chain vault info
       const tokenInfo = await getVaultTokenInfo(vault);
 
-      const vaultDeposits = vaultTotals.get(vault.address.toLowerCase()) ?? 0;
-      const allocationPercent = totalAllDeposits > 0
-        ? (vaultDeposits / totalAllDeposits) * 100
-        : 0;
+      // Get deposits for this vault - if no deposits have vault_address set,
+      // attribute all deposits to the primary vault
+      let vaultDepositsRaw = vaultTotals.get(vault.address.toLowerCase()) ?? 0;
+      if (vaultDepositsRaw === 0 && vault.isPrimary && depositsWithVaultAddress === 0) {
+        // No deposits have vault_address set, attribute all to primary vault
+        vaultDepositsRaw = totalAllDepositsRaw;
+      }
+      const allocationPercent = totalAllDepositsRaw > 0
+        ? (vaultDepositsRaw / totalAllDepositsRaw) * 100
+        : (vault.isPrimary ? 100 : 0);
 
-      // Calculate USD values
+      // Normalize deposits from raw format (assumed 10^18 scale) to token units
+      const vaultDepositsNormalized = vaultDepositsRaw / 1e18;
+
+      // Use correct decimals and fallback price based on token
+      const reserveDecimals = getTokenDecimals(vault.reserveToken);
+      const fallbackPrice = vault.reserveToken === 'WBTC' ? 100000 : vault.reserveToken === 'ETH' ? 3000 : 1;
+
+      // Calculate USD values from on-chain data
       let totalValueUsd = 0;
       let totalDebtUsd = 0;
       let yieldEarnedUsd = 0;
       let totalDeposited = 0;
+
       if (tokenInfo) {
         const totalAssets = BigInt(tokenInfo.totalAssets);
         const totalDebt = BigInt(tokenInfo.totalDebt);
         const yieldEarned = BigInt(tokenInfo.yieldEarned);
         const reservePrice = BigInt(tokenInfo.reservePrice);
+        const divisor = BigInt(10 ** reserveDecimals);
 
         if (totalAssets > 0n && reservePrice > 0n) {
-          totalValueUsd = Number(totalAssets * reservePrice / 10n ** 18n) / 1e8;
+          totalValueUsd = Number(totalAssets * reservePrice / divisor) / 1e8;
         }
         if (totalDebt > 0n && reservePrice > 0n) {
-          // Note: debt might be in different decimals, assuming 18 for now
-          totalDebtUsd = Number(totalDebt * reservePrice / 10n ** 18n) / 1e8;
+          totalDebtUsd = Number(totalDebt * reservePrice / divisor) / 1e8;
         }
         if (yieldEarned > 0n && reservePrice > 0n) {
-          yieldEarnedUsd = Number(yieldEarned * reservePrice / 10n ** 18n) / 1e8;
+          yieldEarnedUsd = Number(yieldEarned * reservePrice / divisor) / 1e8;
         }
-        // Total deposited in native units (for display) - use correct decimals
-        const reserveDecimals = getTokenDecimals(vault.reserveToken);
+        // Total deposited in native units (for display)
         totalDeposited = Number(totalAssets) / Math.pow(10, reserveDecimals);
       }
 
+      // If on-chain data is unavailable or zero, fall back to database deposits
+      if (totalDeposited === 0 && vaultDepositsNormalized > 0) {
+        totalDeposited = vaultDepositsNormalized;
+        totalValueUsd = vaultDepositsNormalized * fallbackPrice;
+        console.log('[API] Using database fallback for vault', vault.id, ':', {
+          vaultDepositsRaw,
+          vaultDepositsNormalized,
+          totalValueUsd,
+        });
+      }
+
+      console.log('[API] Vault', vault.id, 'final values:', {
+        vaultDepositsNormalized,
+        totalDeposited,
+        totalValueUsd,
+        tokenInfoTotalAssets: tokenInfo?.totalAssets,
+      });
+
       // Calculate APY estimate
       const currentAPY = totalValueUsd > 0 ? (yieldEarnedUsd / totalValueUsd) * 365 * 100 : 0;
-
-      // Use correct fallback price based on token
-      const fallbackPrice = vault.reserveToken === 'WBTC' ? 100000 : vault.reserveToken === 'ETH' ? 3000 : 1;
-      const reserveDecimals = getTokenDecimals(vault.reserveToken);
 
       strategies.push({
         id: vault.id,
@@ -295,7 +353,7 @@ export async function GET() {
         protocol: 'Bangui DAF',
         asset: vault.reserveToken as 'ETH' | 'USDC' | 'DAI' | 'WBTC' | 'USDT',
         allocation: {
-          amount: totalValueUsd || vaultDeposits,
+          amount: totalValueUsd || vaultDepositsNormalized * fallbackPrice,
           percentage: Math.round(allocationPercent * 10) / 10,
         },
         yield: {
@@ -322,8 +380,8 @@ export async function GET() {
           symbol: tokenInfo.debtAssetSymbol,
           address: tokenInfo.debtAssetAddress ? truncateAddress(tokenInfo.debtAssetAddress) : undefined,
         } : undefined,
-        totalDeposited: totalDeposited || vaultDeposits,
-        totalDepositedUsd: totalValueUsd || vaultDeposits * fallbackPrice,
+        totalDeposited: totalDeposited || vaultDepositsNormalized,
+        totalDepositedUsd: totalValueUsd || vaultDepositsNormalized * fallbackPrice,
         totalDebt: tokenInfo ? Number(BigInt(tokenInfo.totalDebt)) / Math.pow(10, reserveDecimals) : 0,
         totalDebtUsd: totalDebtUsd,
         vaultAddress: vault.address,
@@ -337,13 +395,16 @@ export async function GET() {
       const tokenSymbol = primaryVault?.reserveToken ?? 'WBTC';
       const fallbackPrice = tokenSymbol === 'WBTC' ? 100000 : tokenSymbol === 'ETH' ? 3000 : 1;
 
+      // Normalize deposits (assuming 10^18 scale)
+      const totalDepositsNormalized = totalAllDepositsRaw / 1e18;
+
       strategies.push({
         id: 'placeholder',
         name: `ai${tokenSymbol} Vault`,
         protocol: 'Bangui DAF',
         asset: tokenSymbol as 'ETH' | 'USDC' | 'DAI' | 'WBTC' | 'USDT',
         allocation: {
-          amount: totalAllDeposits,
+          amount: totalDepositsNormalized * fallbackPrice,
           percentage: 100,
         },
         yield: {
@@ -361,8 +422,8 @@ export async function GET() {
         debtAsset: {
           symbol: 'GHO',
         },
-        totalDeposited: totalAllDeposits,
-        totalDepositedUsd: totalAllDeposits * fallbackPrice,
+        totalDeposited: totalDepositsNormalized,
+        totalDepositedUsd: totalDepositsNormalized * fallbackPrice,
         totalDebt: 0,
         totalDebtUsd: 0,
         chain: primaryVault?.chain ?? 'sepolia',

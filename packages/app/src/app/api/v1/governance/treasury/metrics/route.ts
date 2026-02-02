@@ -44,11 +44,18 @@ export async function GET() {
       throw depositsError;
     }
 
-    const totalDbDeposits = (confirmedDeposits || []).reduce(
+    // Deposits are stored in wei-like format (10^18 scale), normalize them
+    const totalDbDepositsRaw = (confirmedDeposits || []).reduce(
       (sum, d) => sum + parseFloat(d.amount || '0'),
       0
     );
+    // Normalize to human-readable units
+    const totalDbDeposits = totalDbDepositsRaw / 1e18;
     const depositCount = confirmedDeposits?.length || 0;
+
+    // Get the primary vault's token for price estimate
+    const primaryVault = VAULTS.find(v => v.isPrimary && v.address !== '0x0000000000000000000000000000000000000000');
+    const fallbackPrice = primaryVault?.reserveToken === 'WBTC' ? 100000 : primaryVault?.reserveToken === 'ETH' ? 3000 : 1;
 
     // Get 30-day deposit change
     const thirtyDaysAgo = new Date();
@@ -60,10 +67,11 @@ export async function GET() {
       .eq('status', 'confirmed')
       .gte('deposited_at', thirtyDaysAgo.toISOString());
 
-    const recentTotal = (recentDepositsData || []).reduce(
+    const recentTotalRaw = (recentDepositsData || []).reduce(
       (sum, d) => sum + parseFloat(d.amount || '0'),
       0
     );
+    const recentTotal = recentTotalRaw / 1e18;
     const olderTotal = totalDbDeposits - recentTotal;
     const change30d = olderTotal > 0 ? ((recentTotal / olderTotal) * 100) : 0;
 
@@ -88,9 +96,7 @@ export async function GET() {
     let activeVaultCount = 0;
     const activeAssets = new Set<string>();
 
-    // Get the primary vault for metrics
-    const primaryVault = VAULTS.find(v => v.isPrimary && v.address !== '0x0000000000000000000000000000000000000000');
-
+    // Use the primary vault from earlier for on-chain data fetch
     if (primaryVault) {
       const viemChain = CHAIN_MAP[primaryVault.chain];
       const rpcEnvVar = RPC_ENV_MAP[primaryVault.chain];
@@ -138,7 +144,7 @@ export async function GET() {
 
     const totalValueUsd = totalValueOnchain > 0n && reservePrice > 0n
       ? Number(totalValueOnchain * reservePrice / divisor) / 1e8
-      : totalDbDeposits;
+      : totalDbDeposits * fallbackPrice;
 
     const yieldEarnedUsd = yieldEarned > 0n && reservePrice > 0n
       ? Number(yieldEarned * reservePrice / divisor) / 1e8
