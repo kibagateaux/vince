@@ -59,6 +59,38 @@ export interface StrategyPerformance {
     currentAPY: number;
     trend: 'up' | 'down' | 'stable';
   };
+  /** Reserve token details (the token deposited into the vault) */
+  reserveToken?: {
+    symbol: string;
+    address?: string;
+  };
+  /** Vault share token details (the token minted to depositors) */
+  vaultToken?: {
+    symbol: string;
+    address?: string;
+  };
+  /** Debt token details (Aave variable debt token) */
+  debtToken?: {
+    symbol: string;
+    address?: string;
+  };
+  /** Debt asset details (the borrowed asset, e.g., GHO) */
+  debtAsset?: {
+    symbol: string;
+    address?: string;
+  };
+  /** Total deposited in native token units */
+  totalDeposited?: number;
+  /** Total deposited in USD */
+  totalDepositedUsd?: number;
+  /** Total debt in native token units */
+  totalDebt?: number;
+  /** Total debt in USD */
+  totalDebtUsd?: number;
+  /** Vault contract address */
+  vaultAddress?: string;
+  /** Chain the vault is deployed on */
+  chain?: string;
 }
 
 export interface BlendedYieldMetrics {

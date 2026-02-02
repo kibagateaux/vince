@@ -116,12 +116,15 @@ export async function POST(request: NextRequest) {
   // Get or create wallet
   const wallet = await findOrCreateWallet(db, userId, walletAddress, chain);
 
-  // Create pending deposit record
+  // Create pending deposit record with full tracking data
   const deposit = await createDeposit(db, {
     userId,
     walletId: wallet.id as UUID,
     amount,
     token,
+    tokenAddress: reserveTokenAddress,
+    vaultAddress: contractAddress,
+    chain,
   });
 
   // Build transactions (checks allowance and returns approve tx if needed)

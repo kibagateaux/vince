@@ -218,6 +218,9 @@ export interface Database {
           tx_hash: string | null;
           amount: string;
           token: string;
+          token_address: string | null;
+          vault_address: string | null;
+          chain: string | null;
           deposited_at: string | null;
           status: DepositStatus;
         };
@@ -228,6 +231,9 @@ export interface Database {
           tx_hash?: string | null;
           amount: string;
           token: string;
+          token_address?: string | null;
+          vault_address?: string | null;
+          chain?: string | null;
           deposited_at?: string | null;
           status?: DepositStatus;
         };
@@ -238,8 +244,55 @@ export interface Database {
           tx_hash?: string | null;
           amount?: string;
           token?: string;
+          token_address?: string | null;
+          vault_address?: string | null;
+          chain?: string | null;
           deposited_at?: string | null;
           status?: DepositStatus;
+        };
+      };
+      treasury_snapshots: {
+        Row: {
+          id: string;
+          vault_address: string;
+          chain: string;
+          total_assets: string;
+          total_shares: string;
+          asset_price_usd: string | null;
+          total_value_usd: string | null;
+          yield_earned: string | null;
+          apy_estimate: string | null;
+          depositor_count: number | null;
+          snapshot_at: string;
+          metadata: Json | null;
+        };
+        Insert: {
+          id?: string;
+          vault_address: string;
+          chain: string;
+          total_assets: string;
+          total_shares: string;
+          asset_price_usd?: string | null;
+          total_value_usd?: string | null;
+          yield_earned?: string | null;
+          apy_estimate?: string | null;
+          depositor_count?: number | null;
+          snapshot_at?: string;
+          metadata?: Json | null;
+        };
+        Update: {
+          id?: string;
+          vault_address?: string;
+          chain?: string;
+          total_assets?: string;
+          total_shares?: string;
+          asset_price_usd?: string | null;
+          total_value_usd?: string | null;
+          yield_earned?: string | null;
+          apy_estimate?: string | null;
+          depositor_count?: number | null;
+          snapshot_at?: string;
+          metadata?: Json | null;
         };
       };
       conversations: {
@@ -528,6 +581,10 @@ export type AgentConversationInsert = Database['public']['Tables']['agent_conver
 /** Agent message row type */
 export type AgentMessageRow = Database['public']['Tables']['agent_messages']['Row'];
 export type AgentMessageInsert = Database['public']['Tables']['agent_messages']['Insert'];
+
+/** Treasury snapshot row type */
+export type TreasurySnapshotRow = Database['public']['Tables']['treasury_snapshots']['Row'];
+export type TreasurySnapshotInsert = Database['public']['Tables']['treasury_snapshots']['Insert'];
 
 // ============================================================================
 // Pagination Types
