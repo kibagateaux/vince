@@ -244,7 +244,11 @@ export const processMessage = async (
       userChainId,
       resolvedVault
     );
-  } else if (state === 'investment_suggestions') {
+  } else if (state === 'allocation_rejected') {
+    // Handle allocation rejection - be supportive and offer options without immediately pushing for another deposit
+    return handleAllocationRejection(db, userId, conversationId, content, vinceRuntime, userChainId, resolvedVault);
+  } else if (state === 'investment_suggestions' || state === 'deposit_confirmed' || state === 'deposit_intent' || state === 'deposit_pending') {
+    // Handle all donation-related states - allows users to make additional donations
     return handleInvestmentQuery(db, userId, conversationId, content, vinceRuntime, userChainId, resolvedVault);
   }
 
@@ -619,6 +623,73 @@ const generateAIResponse = async (
   }
 
   return { content: responseContent };
+};
+
+/**
+ * Handle allocation rejection state
+ * Provides supportive response without immediately pushing for another deposit
+ * Allows user to discuss what happened or try again when ready
+ */
+const handleAllocationRejection = async (
+  db: Db,
+  _userId: string,
+  conversationId: string,
+  content: string,
+  vinceRuntime: VinceRuntime | null,
+  userChainId: number,
+  resolvedVault?: VaultMetadata
+): Promise<AgentResponse> => {
+  const lowerContent = content.toLowerCase();
+
+  // Check if user wants to try again
+  const retrySignals = ['try again', 'retry', 'another', 'different amount', 'new deposit', 'deposit again'];
+  const wantsRetry = retrySignals.some(signal => lowerContent.includes(signal));
+
+  if (wantsRetry) {
+    // User wants to try again - transition back to investment_suggestions and handle as normal
+    await updateConversationState(db, conversationId, 'investment_suggestions' as ConversationState);
+    return handleInvestmentQuery(db, _userId, conversationId, content, vinceRuntime, userChainId, resolvedVault);
+  }
+
+  // Check if user is asking about what happened
+  const questionSignals = ['why', 'what happened', 'explain', 'reason', 'understand'];
+  const askingAboutRejection = questionSignals.some(signal => lowerContent.includes(signal));
+
+  let responseContent: string;
+
+  if (askingAboutRejection) {
+    responseContent = `The allocation couldn't be approved because our fund manager, Kincho, needs to ensure all investments meet certain criteria for risk management and portfolio balance.
+
+This can happen when:
+- The allocation would exceed concentration limits in certain areas
+- Additional verification is needed for larger amounts
+- The suggested allocation needs adjustment to fit fund policies
+
+Would you like to try a different amount, or would you prefer to explore other options first?`;
+  } else {
+    // General supportive response
+    responseContent = `I understand that can be frustrating. Your deposit was received, but the specific allocation couldn't be processed automatically.
+
+Here are your options:
+- **Try again** with a different amount or approach
+- **Explore** other investment opportunities
+- **Ask me** any questions about how allocations work
+
+What would you like to do?`;
+  }
+
+  await createMessage(db, {
+    conversationId,
+    sender: 'vince',
+    content: responseContent,
+  });
+
+  return {
+    type: 'response',
+    conversationId: conversationId as UUID,
+    agent: 'vince',
+    content: responseContent,
+  };
 };
 
 /**

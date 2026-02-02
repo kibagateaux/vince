@@ -42,7 +42,10 @@ let kinchoRuntime: KinchoRuntime | null = null;
  * Prefers Anthropic over OpenRouter if API key is available
  */
 export const getKinchoRuntime = (): KinchoRuntime | null => {
-  if (!kinchoRuntime && process.env.DAF_CONTRACT_ADDRESS) {
+  // Support both DAF_CONTRACT_ADDRESS and NEXT_PUBLIC_DAF_CONTRACT_ADDRESS
+  const vaultAddress = process.env.DAF_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DAF_CONTRACT_ADDRESS;
+
+  if (!kinchoRuntime && vaultAddress) {
     // Prefer Anthropic if available, fall back to OpenRouter
     if (process.env.ANTHROPIC_API_KEY) {
       console.log('[Kincho] Using Anthropic provider');
@@ -50,7 +53,7 @@ export const getKinchoRuntime = (): KinchoRuntime | null => {
         apiKey: process.env.ANTHROPIC_API_KEY,
         provider: 'anthropic',
         model: 'claude-sonnet-4-20250514',
-        vaultAddress: process.env.DAF_CONTRACT_ADDRESS as Address,
+        vaultAddress: vaultAddress as Address,
       });
     } else if (process.env.OPENROUTER_API_KEY) {
       console.log('[Kincho] Using OpenRouter provider');
@@ -58,7 +61,7 @@ export const getKinchoRuntime = (): KinchoRuntime | null => {
         apiKey: process.env.OPENROUTER_API_KEY,
         provider: 'openrouter',
         model: process.env.OPENROUTER_MODEL,
-        vaultAddress: process.env.DAF_CONTRACT_ADDRESS as Address,
+        vaultAddress: vaultAddress as Address,
       });
     }
   }
@@ -460,11 +463,55 @@ export const formatDecisionForUser = (
   decision: KinchoAllocationResponse
 ): string => {
   if (decision.decision === 'rejected') {
+    const analysis = decision.kinchoAnalysis;
+    const meta = analysis.metaCognition;
+    const risk = analysis.riskAssessment;
+
+    // Build detailed reasoning
+    const reasoningSteps = meta.reasoningChain
+      .map((step) => `${step.step}. ${step.premise} → ${step.conclusion}`)
+      .join('\n');
+
+    // Format uncertainty sources
+    const uncertainties = meta.uncertaintySources.length > 0
+      ? `\n**Concerns:**\n${meta.uncertaintySources.map(u => `- ${u}`).join('\n')}`
+      : '';
+
+    // Format risk summary
+    const riskSummary = `
+**Risk Assessment:**
+- Market Risk: ${(risk.marketRisk * 100).toFixed(0)}%
+- Credit Risk: ${(risk.creditRisk * 100).toFixed(0)}%
+- Liquidity Risk: ${(risk.liquidityRisk * 100).toFixed(0)}%
+- Aggregate Risk: ${(risk.aggregateRisk * 100).toFixed(0)}%`;
+
+    // Compliance issues
+    const complianceIssues: string[] = [];
+    if (!risk.complianceChecks.concentrationLimit) {
+      complianceIssues.push('Would exceed concentration limits');
+    }
+    if (!risk.complianceChecks.liquidityRequirement) {
+      complianceIssues.push('Would breach liquidity reserve requirement');
+    }
+    if (!risk.complianceChecks.sectorLimit) {
+      complianceIssues.push('Would exceed sector limits');
+    }
+    const complianceNote = complianceIssues.length > 0
+      ? `\n**Compliance Issues:**\n${complianceIssues.map(c => `- ${c}`).join('\n')}`
+      : '';
+
     return `I've reviewed your allocation request with our fund manager, Kincho. Unfortunately, the allocation couldn't be approved at this time.
 
-Reason: ${decision.kinchoAnalysis.metaCognition.reasoningChain.slice(-1)[0]?.conclusion ?? 'Unable to process allocation'}
+**Kincho's Analysis:**
+- Portfolio Fit Score: ${(analysis.fitScore * 100).toFixed(0)}%
+- Confidence: ${(meta.confidenceScore * 100).toFixed(0)}%
+- Human Review Recommended: ${meta.humanOverrideRecommended ? 'Yes' : 'No'}
+${riskSummary}${complianceNote}${uncertainties}
 
-Would you like to discuss alternative options?`;
+**Reasoning:**
+${reasoningSteps}
+
+Would you like to discuss alternative options or try a different amount?`;
   }
 
   const totalAmount = decision.allocations.reduce((sum, a) => sum + a.amount, 0);

@@ -32,6 +32,11 @@ export const connectSession = async (
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ platform, walletAddress }),
   });
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('[API] connectSession failed:', res.status, errorText);
+    throw new Error(`Failed to connect: ${res.status} - ${errorText}`);
+  }
   return res.json();
 };
 

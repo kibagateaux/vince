@@ -24,14 +24,27 @@ export interface FinancialAnalysisResult {
 
 /**
  * Cause category weights for diversification calculation
+ * Aligned with cause categories from psycho-analyzer
  */
 const CAUSE_CATEGORY_WEIGHTS: Record<string, number> = {
+  // High-impact causes (weight >= 0.2 triggers bonus)
   global_health: 0.25,
+  health: 0.25, // Alias for global_health
   education: 0.20,
   environment: 0.20,
+  climate: 0.20, // Related to environment
+  // Medium-impact causes
   poverty_alleviation: 0.15,
+  economic_empowerment: 0.15, // From psycho-analyzer
+  policy_advocacy: 0.15, // From psycho-analyzer
+  // Lower-impact but valid causes
+  local_community: 0.12, // From psycho-analyzer
+  arts_culture: 0.10, // From psycho-analyzer
   animal_welfare: 0.10,
+  general: 0.10, // Default allocation category
   other: 0.10,
+  // Yield/reserve is not a "cause" but should be recognized
+  yield: 0.05,
 };
 
 /**
@@ -73,8 +86,13 @@ function calculateFitScore(
   }
 
   // Penalize if recommendation suggests allocating to already concentrated areas
+  // Exception: yield/reserve allocations are expected to be concentrated (liquidity requirement)
   for (const allocation of recommendation.suggestedAllocations) {
     const category = allocation.causeId.split('-')[1] ?? 'other';
+    // Skip penalty for yield/reserve allocations - they're required for liquidity
+    if (category === 'yield' || allocation.causeId.includes('yield') || allocation.causeId.includes('reserve')) {
+      continue;
+    }
     const currentConcentration = fundState.currentAllocation[category] ?? 0;
     if (currentConcentration > 0.25) {
       fitScore -= 0.1;

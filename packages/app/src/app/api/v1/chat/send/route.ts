@@ -38,26 +38,34 @@ export async function POST(request: NextRequest) {
 
   const runtime = getVinceRuntime();
 
-  // Process message based on conversation state
-  const response = await processMessage(
-    db,
-    userId,
-    conversationId,
-    content,
-    conversation.state,
-    runtime,
-    metadata?.questionId,
-    metadata?.chainId,
-    metadata?.vaultId
-  );
+  try {
+    // Process message based on conversation state
+    const response = await processMessage(
+      db,
+      userId,
+      conversationId,
+      content,
+      conversation.state,
+      runtime,
+      metadata?.questionId,
+      metadata?.chainId,
+      metadata?.vaultId
+    );
 
-  // Get updated messages
-  const messages = await getConversationMessages(db, conversationId);
-  const updatedConversation = await getConversation(db, conversationId);
+    // Get updated messages
+    const messages = await getConversationMessages(db, conversationId);
+    const updatedConversation = await getConversation(db, conversationId);
 
-  return NextResponse.json({
-    messages: formatMessagesForClient(messages),
-    state: updatedConversation?.state ?? conversation.state,
-    response, // The latest response for immediate display
-  });
+    return NextResponse.json({
+      messages: formatMessagesForClient(messages),
+      state: updatedConversation?.state ?? conversation.state,
+      response, // The latest response for immediate display
+    });
+  } catch (error) {
+    console.error('[Chat Send] Error processing message:', error);
+    return NextResponse.json(
+      { error: 'Failed to process message', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
 }

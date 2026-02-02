@@ -50,6 +50,21 @@ export const findOrCreateWallet = async (
   }
 
   if (existing) {
+    // Update chain if it differs (fixes wallets created with wrong chain)
+    if (existing.chain !== chain) {
+      const { data: updated, error: updateError } = await db
+        .from('wallets')
+        .update({ chain })
+        .eq('id', existing.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.warn('[findOrCreateWallet] Failed to update chain:', updateError);
+        return existing; // Return existing if update fails
+      }
+      return updated ?? existing;
+    }
     return existing;
   }
 
