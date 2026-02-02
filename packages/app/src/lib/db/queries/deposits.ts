@@ -14,6 +14,9 @@ export interface CreateDepositInput {
   readonly walletId: string;
   readonly amount: string;
   readonly token: string;
+  readonly tokenAddress?: string;
+  readonly vaultAddress?: string;
+  readonly chain?: string;
 }
 
 /**
@@ -28,6 +31,9 @@ export const createDeposit = async (
     wallet_id: input.walletId,
     amount: input.amount,
     token: input.token,
+    token_address: input.tokenAddress ?? null,
+    vault_address: input.vaultAddress ?? null,
+    chain: input.chain ?? null,
     status: 'pending',
   };
 
@@ -45,19 +51,39 @@ export const createDeposit = async (
 };
 
 /**
+ * Options for updating deposit status
+ */
+export interface UpdateDepositOptions {
+  readonly txHash?: string;
+  readonly vaultAddress?: string;
+  readonly tokenAddress?: string;
+  readonly chain?: string;
+}
+
+/**
  * Updates deposit status and sets txHash/timestamp
  */
 export const updateDepositStatus = async (
   db: Db,
   id: string,
   status: DepositStatus,
-  txHash?: string
+  options?: string | UpdateDepositOptions
 ): Promise<void> => {
+  // Support both old string signature and new options object
+  const opts: UpdateDepositOptions = typeof options === 'string'
+    ? { txHash: options }
+    : options ?? {};
+
   const update: Partial<DepositRow> = {
     status,
-    tx_hash: txHash ?? null,
+    tx_hash: opts.txHash ?? null,
     deposited_at: status === 'confirmed' ? new Date().toISOString() : null,
   };
+
+  // Only include these fields if provided (don't overwrite with null)
+  if (opts.vaultAddress) update.vault_address = opts.vaultAddress;
+  if (opts.tokenAddress) update.token_address = opts.tokenAddress;
+  if (opts.chain) update.chain = opts.chain;
 
   const { error } = await db
     .from('deposits')

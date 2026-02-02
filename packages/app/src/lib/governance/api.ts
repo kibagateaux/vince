@@ -34,34 +34,17 @@ export async function fetchTreasuryHoldings(
   days: number = 90
 ): Promise<{ snapshots: TreasurySnapshot[] }> {
   console.log('[Governance API] Fetching treasury holdings for', days, 'days...');
-  // For now, generate client-side based on current metrics
-  // In production, this would fetch from an indexer or historical data service
-  const metrics = await fetchTreasuryMetrics();
-  const snapshots: TreasurySnapshot[] = [];
-  const now = new Date();
 
-  for (let i = days; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
+  const res = await fetch(`${API_BASE}/treasury/holdings?days=${days}`);
+  if (!res.ok) throw new Error('Failed to fetch treasury holdings');
 
-    // Generate realistic-looking historical data based on current value
-    const dayFactor = 1 - (i / days) * 0.1; // 10% growth over period
-    const noise = 1 + (Math.random() - 0.5) * 0.02;
-    const value = metrics.totalValue.current * dayFactor * noise;
+  const data = await res.json();
 
-    snapshots.push({
-      timestamp: date,
-      holdings: [
-        {
-          asset: 'ETH',
-          strategy: 'aiETH-vault',
-          amount: value / 3000, // Approximate ETH amount
-          valueUSD: value,
-        },
-      ],
-      totalValueUSD: value,
-    });
-  }
+  // Transform dates from ISO strings to Date objects
+  const snapshots: TreasurySnapshot[] = data.snapshots.map((s: any) => ({
+    ...s,
+    timestamp: new Date(s.timestamp),
+  }));
 
   console.log('[Governance API] Treasury holdings:', { snapshotCount: snapshots.length, firstSnapshot: snapshots[0], lastSnapshot: snapshots[snapshots.length - 1] });
   return { snapshots };
@@ -69,29 +52,13 @@ export async function fetchTreasuryHoldings(
 
 export async function fetchStrategies(): Promise<StrategyPerformance[]> {
   console.log('[Governance API] Fetching strategies...');
-  // Currently only one strategy (AiETH vault)
-  const metrics = await fetchTreasuryMetrics();
 
-  const strategies = [
-    {
-      id: 'aieth-vault',
-      name: 'AiETH Vault',
-      protocol: 'Bangui DAF',
-      asset: 'ETH' as const,
-      allocation: {
-        amount: metrics.totalValue.current,
-        percentage: 100,
-      },
-      yield: {
-        trailing30d: metrics.currentAPY.blended / 12,
-        trailing90d: metrics.currentAPY.blended / 4,
-        currentAPY: metrics.currentAPY.blended,
-        trend: (metrics.currentAPY.change7d >= 0 ? 'up' : 'down') as 'up' | 'down',
-      },
-    },
-  ];
-  console.log('[Governance API] Strategies:', strategies);
-  return strategies;
+  const res = await fetch(`${API_BASE}/treasury/strategies`);
+  if (!res.ok) throw new Error('Failed to fetch strategies');
+
+  const data = await res.json();
+  console.log('[Governance API] Strategies:', data);
+  return data.strategies;
 }
 
 export async function fetchBlendedYields(): Promise<BlendedYieldMetrics[]> {

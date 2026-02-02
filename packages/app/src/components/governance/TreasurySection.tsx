@@ -206,68 +206,115 @@ export const TreasurySection: FC<TreasurySectionProps> = ({
         </div>
       </div>
 
-      {/* Strategy Performance Table */}
+      {/* Vaults Table */}
       <div className="rounded-xl bg-white shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Strategy Performance</h3>
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Vaults</h3>
+          <a
+            href="/?context=vaults"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+            Consult Vince
+          </a>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 text-left text-sm font-semibold text-gray-900">
-                <th className="px-6 py-4">Strategy</th>
-                <th className="px-6 py-4">Asset</th>
+                <th className="px-4 py-3">Vault Name</th>
+                <th className="px-4 py-3">Vault Asset</th>
+                <th className="px-4 py-3">Debt Asset</th>
                 <th
-                  className="px-6 py-4 cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('allocation')}
                 >
-                  Allocation {sortBy === 'allocation' && (sortOrder === 'desc' ? '↓' : '↑')}
+                  Allocation % {sortBy === 'allocation' && (sortOrder === 'desc' ? '↓' : '↑')}
                 </th>
-                <th className="px-6 py-4 text-right">30d Yield</th>
-                <th className="px-6 py-4 text-right">90d Yield</th>
+                <th className="px-4 py-3 text-right">Total Deposited</th>
+                <th className="px-4 py-3 text-right">Total Debt</th>
+                <th className="px-4 py-3 text-right">30d APY</th>
                 <th
-                  className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100"
+                  className="px-4 py-3 text-right cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('apy')}
                 >
-                  Current APY {sortBy === 'apy' && (sortOrder === 'desc' ? '↓' : '↑')}
+                  90d APY {sortBy === 'apy' && (sortOrder === 'desc' ? '↓' : '↑')}
                 </th>
               </tr>
             </thead>
             <tbody>
-              {sortedStrategies.map((strategy) => (
+              {sortedStrategies.map((vault) => (
                 <tr
-                  key={strategy.id}
+                  key={vault.id}
                   className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                 >
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3">
                     <div>
-                      <div className="font-medium text-gray-900">{strategy.name}</div>
-                      <div className="text-sm text-gray-500">{strategy.protocol}</div>
+                      <div className="font-medium text-gray-900">{vault.name}</div>
+                      {vault.vaultToken?.address && (
+                        <div className="text-xs text-gray-400 font-mono">{vault.vaultToken.address}</div>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div
                         className="h-3 w-3 rounded"
-                        style={{ backgroundColor: assetColors[strategy.asset] }}
+                        style={{ backgroundColor: assetColors[vault.asset] || '#ccc' }}
                       />
-                      <span className="text-gray-700">{strategy.asset}</span>
+                      <div>
+                        <span className="font-medium text-gray-700">{vault.reserveToken?.symbol ?? vault.asset}</span>
+                        {vault.reserveToken?.address && (
+                          <div className="text-xs text-gray-400 font-mono">{vault.reserveToken.address}</div>
+                        )}
+                      </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-gray-700">
-                    {formatCurrency(strategy.allocation.amount)} ({strategy.allocation.percentage}%)
+                  <td className="px-4 py-3">
+                    {vault.debtAsset ? (
+                      <div>
+                        <span className="font-medium text-gray-700">{vault.debtAsset.symbol}</span>
+                        {vault.debtAsset.address && (
+                          <div className="text-xs text-gray-400 font-mono">{vault.debtAsset.address}</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
-                  <td className="px-6 py-4 text-right text-gray-700">
-                    {strategy.yield.trailing30d.toFixed(2)}%
+                  <td className="px-4 py-3 text-gray-700">
+                    {vault.allocation.percentage.toFixed(1)}%
                   </td>
-                  <td className="px-6 py-4 text-right text-gray-700">
-                    {strategy.yield.trailing90d.toFixed(2)}%
+                  <td className="px-4 py-3 text-right">
+                    <div className="text-gray-900 font-medium">
+                      {vault.totalDeposited !== undefined
+                        ? `${vault.totalDeposited.toFixed(4)} ${vault.reserveToken?.symbol ?? vault.asset}`
+                        : '—'}
+                    </div>
+                    {vault.totalDepositedUsd !== undefined && vault.totalDepositedUsd > 0 && (
+                      <div className="text-xs text-gray-500">{formatCurrency(vault.totalDepositedUsd)}</div>
+                    )}
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-4 py-3 text-right">
+                    <div className="text-gray-900 font-medium">
+                      {vault.totalDebt !== undefined && vault.totalDebt > 0
+                        ? `${vault.totalDebt.toFixed(4)} ${vault.debtAsset?.symbol ?? '—'}`
+                        : '—'}
+                    </div>
+                    {vault.totalDebtUsd !== undefined && vault.totalDebtUsd > 0 && (
+                      <div className="text-xs text-gray-500">{formatCurrency(vault.totalDebtUsd)}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700">
+                    {vault.yield.trailing30d.toFixed(2)}%
+                  </td>
+                  <td className="px-4 py-3 text-right">
                     <span className="font-medium text-gray-900">
-                      {strategy.yield.currentAPY.toFixed(1)}%
+                      {vault.yield.trailing90d.toFixed(2)}%
                     </span>{' '}
-                    {getTrendIcon(strategy.yield.trend)}
+                    {getTrendIcon(vault.yield.trend)}
                   </td>
                 </tr>
               ))}

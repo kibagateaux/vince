@@ -20,3 +20,4 @@ export * from './queries/wallets';
 export * from './queries/deposits';
 export * from './queries/allocations';
 export * from './queries/agent-conversations';
+export * from './queries/treasury';

@@ -22,6 +22,7 @@ import {
   formatDecisionForUser,
   getKinchoRuntime,
 } from '../../../../../lib/kincho-helpers';
+import { captureTreasurySnapshot } from '../../../../../lib/treasury-snapshot';
 import type { UUID, UserPreferences, VinceRecommendation, SuggestedAllocation, Address, Chain } from '@bangui/types';
 
 export async function POST(request: NextRequest) {
@@ -46,11 +47,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Wallet not found for deposit' }, { status: 404 });
   }
 
-  // Get the vault address for the wallet's chain
-  const vault = getPrimaryVault(wallet.chain as Chain);
-  const vaultAddress = vault?.address as Address | undefined;
+  // Use vault address from deposit if available (set during prepare), otherwise get from chain config
+  const chain = (deposit.chain ?? wallet.chain) as Chain;
+  let vaultAddress = deposit.vault_address as Address | undefined;
   if (!vaultAddress || vaultAddress === '0x0000000000000000000000000000000000000000') {
-    console.warn(`[Deposit Confirm] No vault configured for chain ${wallet.chain}, using default from env`);
+    const vault = getPrimaryVault(chain);
+    vaultAddress = vault?.address as Address | undefined;
+    if (!vaultAddress || vaultAddress === '0x0000000000000000000000000000000000000000') {
+      console.warn(`[Deposit Confirm] No vault configured for chain ${chain}, using default from env`);
+    }
+  }
+
+  // Capture treasury snapshot after successful deposit (non-blocking)
+  if (vaultAddress && vaultAddress !== '0x0000000000000000000000000000000000000000') {
+    captureTreasurySnapshot(db, vaultAddress, chain).catch((err) => {
+      console.error('[Deposit Confirm] Treasury snapshot failed:', err);
+    });
   }
 
   // Check if Kincho is available
