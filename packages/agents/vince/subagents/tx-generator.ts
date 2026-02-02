@@ -345,28 +345,116 @@ export const simulateTx = async (
 };
 
 /**
- * Formats amount for display
- * @param amount - Amount in wei
- * @param decimals - Token decimals (default 18)
+ * Formats amount from smallest unit to human-readable display.
+ *
+ * CRITICAL: decimals must match the token's actual decimals.
+ * - ETH/WETH/DAI: 18 decimals
+ * - USDC/USDT: 6 decimals
+ * - WBTC: 8 decimals
+ *
+ * @param amount - Amount in smallest unit (wei, satoshis, etc.)
+ * @param decimals - Token decimals (REQUIRED - must match token)
+ * @param tokenSymbol - Optional token symbol for logging
  * @returns Human-readable amount string
  */
-export const formatAmount = (amount: BigIntString, decimals = 18): string => {
+export const formatAmount = (amount: BigIntString, decimals: number, tokenSymbol?: string): string => {
+  if (decimals === undefined || decimals === null) {
+    throw new Error(
+      `[TX-GENERATOR] formatAmount: decimals is required. ` +
+      `Using wrong decimals causes incorrect display amounts.`
+    );
+  }
+
   const bn = BigInt(amount);
   const divisor = BigInt(10 ** decimals);
   const whole = bn / divisor;
   const fraction = bn % divisor;
   const fractionStr = fraction.toString().padStart(decimals, '0').slice(0, 4);
-  return `${whole}.${fractionStr}`;
+  const result = `${whole}.${fractionStr}`;
+
+  console.log('[TX-GENERATOR] formatAmount:', {
+    input: amount,
+    decimals,
+    token: tokenSymbol ?? 'unknown',
+    output: result,
+  });
+
+  return result;
 };
 
 /**
- * Parses amount from human-readable to wei
- * @param amount - Human-readable amount (e.g., "1.5")
- * @param decimals - Token decimals (default 18)
- * @returns Amount in wei as BigIntString
+ * Parses amount from human-readable to smallest unit.
+ *
+ * CRITICAL: decimals must match the token's actual decimals.
+ * Wrong decimals = wrong transaction amount = potential loss of funds.
+ *
+ * Token decimals:
+ * - ETH/WETH/DAI: 18 decimals
+ * - USDC/USDT: 6 decimals
+ * - WBTC: 8 decimals
+ *
+ * @param amount - Human-readable amount (e.g., "1.5", "0.001")
+ * @param decimals - Token decimals (REQUIRED - must match token)
+ * @param tokenSymbol - Optional token symbol for logging
+ * @returns Amount in smallest unit as BigIntString
  */
-export const parseAmount = (amount: string, decimals = 18): BigIntString => {
+export const parseAmount = (amount: string, decimals: number, tokenSymbol?: string): BigIntString => {
+  if (decimals === undefined || decimals === null) {
+    throw new Error(
+      `[TX-GENERATOR] parseAmount: decimals is required. ` +
+      `Using wrong decimals causes incorrect transaction amounts. ` +
+      `Token: ${tokenSymbol ?? 'unknown'}, Amount: ${amount}`
+    );
+  }
+
   const [whole = '0', fraction = ''] = amount.split('.');
   const paddedFraction = fraction.padEnd(decimals, '0').slice(0, decimals);
-  return `${whole}${paddedFraction}` as BigIntString;
+  const result = `${whole}${paddedFraction}` as BigIntString;
+
+  console.log('[TX-GENERATOR] parseAmount:', {
+    input: amount,
+    decimals,
+    token: tokenSymbol ?? 'unknown',
+    output: result,
+    verification: `${amount} ${tokenSymbol ?? ''} = ${result} smallest units`,
+  });
+
+  return result;
+};
+
+/**
+ * Validates that a parsed amount can be round-tripped correctly.
+ * Use this before submitting any transaction to ensure amount integrity.
+ *
+ * @param humanAmount - Original human-readable amount
+ * @param parsedAmount - Parsed amount in smallest units
+ * @param decimals - Token decimals used for parsing
+ * @param tokenSymbol - Token symbol for error messages
+ * @throws Error if validation fails
+ */
+export const validateAmountConversion = (
+  humanAmount: string,
+  parsedAmount: BigIntString,
+  decimals: number,
+  tokenSymbol: string
+): void => {
+  const roundTripped = formatAmount(parsedAmount, decimals, tokenSymbol);
+  const originalNormalized = parseFloat(humanAmount).toFixed(decimals);
+  const roundTrippedNormalized = parseFloat(roundTripped).toFixed(decimals);
+
+  if (originalNormalized !== roundTrippedNormalized) {
+    throw new Error(
+      `[TX-GENERATOR] CRITICAL: Amount validation failed for ${tokenSymbol}! ` +
+      `Original: ${humanAmount}, Parsed: ${parsedAmount}, Round-trip: ${roundTripped}. ` +
+      `Decimals: ${decimals}. TRANSACTION BLOCKED.`
+    );
+  }
+
+  console.log('[TX-GENERATOR] Amount validation PASSED:', {
+    humanAmount,
+    parsedAmount,
+    roundTripped,
+    decimals,
+    tokenSymbol,
+  });
 };
