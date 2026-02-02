@@ -1,0 +1,5 @@
+packages/agents
+packages/types
+packages/app
+packages/db
+root

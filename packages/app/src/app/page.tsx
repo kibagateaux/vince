@@ -8,7 +8,7 @@
 import { FC, useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { createWalletClient, custom, type Chain as ViemChain } from 'viem';
+import { createWalletClient, createPublicClient, custom, type Chain as ViemChain } from 'viem';
 import { useChat } from '../hooks/useChat';
 import { useVinceState } from '../hooks/useVinceState';
 import { useVaultStore } from '../hooks/useVaultStore';
@@ -491,7 +491,7 @@ export default function ChatPage() {
             transport: custom(provider),
           });
 
-          // If approval is needed, send approve tx first
+          // If approval is needed, send approve tx first and wait for confirmation
           if (approveTx) {
             console.log('Sending approve tx:', {
               to: approveTx.to,
@@ -504,9 +504,20 @@ export default function ChatPage() {
               value: 0n,
               chain: null,
             });
-            // Wait for approval to be mined before deposit
-            // Note: In production, you'd want to wait for confirmation
             console.log('Approval tx sent:', approveTxHash);
+
+            // Wait for approval to be mined before deposit
+            // This is critical - deposit will fail if approval isn't confirmed
+            console.log('Waiting for approval confirmation...');
+            const publicClient = createPublicClient({
+              chain: targetChain,
+              transport: custom(provider),
+            });
+            await publicClient.waitForTransactionReceipt({
+              hash: approveTxHash,
+              confirmations: 1,
+            });
+            console.log('Approval confirmed!');
           }
 
           // Send deposit tx - this is a contract call, NOT an ETH transfer

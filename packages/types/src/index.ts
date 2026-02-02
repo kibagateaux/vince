@@ -229,6 +229,7 @@ export const ConversationState = {
   DEPOSIT_INTENT: 'deposit_intent',
   DEPOSIT_PENDING: 'deposit_pending',
   DEPOSIT_CONFIRMED: 'deposit_confirmed',
+  ALLOCATION_REJECTED: 'allocation_rejected',
 } as const;
 export type ConversationState =
   (typeof ConversationState)[keyof typeof ConversationState];

@@ -1,0 +1,6 @@
+packages/agents:build:cd /Users/chrisrair/vince/vince/packages/agents && npm run build
+packages/agents:tsc:cd /Users/chrisrair/vince/vince/packages/agents && npx tsc --noEmit
+packages/app:build:cd /Users/chrisrair/vince/vince/packages/app && npm run build
+packages/app:tsc:cd /Users/chrisrair/vince/vince/packages/app && npx tsc --noEmit
+packages/types:build:cd /Users/chrisrair/vince/vince/packages/types && npm run build
+packages/types:tsc:cd /Users/chrisrair/vince/vince/packages/types && npx tsc --noEmit

@@ -36,7 +36,8 @@ export type ConversationState =
   | 'investment_suggestions'
   | 'deposit_intent'
   | 'deposit_pending'
-  | 'deposit_confirmed';
+  | 'deposit_confirmed'
+  | 'allocation_rejected';
 export type AllocationStatus = 'pending' | 'processing' | 'approved' | 'modified' | 'rejected';
 export type AllocationDecisionType = 'approved' | 'modified' | 'rejected';
 

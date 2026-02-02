@@ -14,6 +14,7 @@ import {
   getWallet,
   createMessage,
   getUserProfile,
+  updateConversationState,
 } from '../../../../../lib/db';
 import { getPrimaryVault } from '../../../../../lib/vaults';
 import {
@@ -148,7 +149,21 @@ export async function POST(request: NextRequest) {
     });
 
     // Process allocation decision
+    console.log('[Deposit Confirm] Processing allocation request:', allocationRequest.id);
     const decision = await processAllocationRequest(db, allocationRequest.id);
+
+    // Log full decision for debugging
+    console.log('[Deposit Confirm] Kincho decision:', JSON.stringify({
+      requestId: allocationRequest.id,
+      decision: decision?.decision,
+      fitScore: decision?.kinchoAnalysis?.fitScore,
+      aggregateRisk: decision?.kinchoAnalysis?.riskAssessment?.aggregateRisk,
+      confidence: decision?.kinchoAnalysis?.metaCognition?.confidenceScore,
+      humanReview: decision?.kinchoAnalysis?.metaCognition?.humanOverrideRecommended,
+      uncertainties: decision?.kinchoAnalysis?.metaCognition?.uncertaintySources,
+      reasoningChain: decision?.kinchoAnalysis?.metaCognition?.reasoningChain,
+      complianceChecks: decision?.kinchoAnalysis?.riskAssessment?.complianceChecks,
+    }, null, 2));
 
     if (decision && conversationId) {
       // Save Kincho's decision to user conversation
@@ -164,6 +179,13 @@ export async function POST(request: NextRequest) {
           allocations: decision.allocations,
         },
       });
+
+      // Update conversation state based on decision
+      if (decision.decision === 'approved' || decision.decision === 'modified') {
+        await updateConversationState(db, conversationId, 'deposit_confirmed');
+      } else if (decision.decision === 'rejected') {
+        await updateConversationState(db, conversationId, 'allocation_rejected');
+      }
     }
 
     return NextResponse.json({
