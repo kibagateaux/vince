@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getSupabase, getAllTreasurySnapshots } from '../../../../../../lib/db';
+import { VAULTS, getVaultByAddress } from '../../../../../../lib/vaults';
+import { getTokenDecimals } from '@bangui/types';
 
 export async function GET(request: Request) {
   console.log('[API] GET /api/v1/governance/treasury/holdings');
@@ -63,10 +65,15 @@ export async function GET(request: Request) {
       const valueUsd = parseFloat(snapshot.total_value_usd ?? '0');
       const totalAssets = parseFloat(snapshot.total_assets ?? '0');
 
+      // Look up the vault to get the correct token symbol and decimals
+      const vault = getVaultByAddress(snapshot.vault_address as `0x${string}`);
+      const tokenSymbol = vault?.reserveToken ?? 'WBTC';
+      const decimals = getTokenDecimals(tokenSymbol);
+
       existing.holdings.push({
-        asset: 'ETH', // Could be derived from vault metadata
-        strategy: `aiETH-${snapshot.chain}`,
-        amount: totalAssets / 1e18, // Convert from wei
+        asset: tokenSymbol,
+        strategy: `ai${tokenSymbol}-${snapshot.chain}`,
+        amount: totalAssets / Math.pow(10, decimals),
         valueUSD: valueUsd,
         vaultAddress: snapshot.vault_address,
         chain: snapshot.chain,
@@ -102,6 +109,13 @@ export async function GET(request: Request) {
  */
 async function generateFromDeposits(db: ReturnType<typeof getSupabase>, days: number) {
   console.log('[API] generateFromDeposits called with days:', days);
+
+  // Get the primary vault (WBTC on Sepolia)
+  const primaryVault = VAULTS.find(v => v.isPrimary) ?? VAULTS[0];
+  const tokenSymbol = primaryVault?.reserveToken ?? 'WBTC';
+  const tokenDecimals = getTokenDecimals(tokenSymbol);
+  // Approximate WBTC price (BTC ~$100k)
+  const tokenPriceUsd = tokenSymbol === 'WBTC' ? 100000 : tokenSymbol === 'ETH' ? 3000 : 1;
 
   try {
     // Get all confirmed deposits - only select base columns that definitely exist
@@ -150,20 +164,21 @@ async function generateFromDeposits(db: ReturnType<typeof getSupabase>, days: nu
       snapshots.push({
         timestamp: date,
         holdings: [{
-          asset: 'ETH',
-          strategy: 'aiETH-vault',
+          asset: tokenSymbol,
+          strategy: `ai${tokenSymbol}-vault`,
           amount: lastTotal,
-          valueUSD: lastTotal * 3000, // Approximate ETH price
-          vaultAddress: 'default',
-          chain: 'sepolia',
+          valueUSD: lastTotal * tokenPriceUsd,
+          vaultAddress: primaryVault?.address ?? 'default',
+          chain: primaryVault?.chain ?? 'sepolia',
         }],
-        totalValueUSD: lastTotal * 3000,
+        totalValueUSD: lastTotal * tokenPriceUsd,
       });
     }
 
     console.log('[API] Generated holdings from deposits:', {
       snapshotCount: snapshots.length,
       latestTotal: lastTotal,
+      tokenSymbol,
     });
 
     return NextResponse.json({ snapshots });
@@ -179,6 +194,10 @@ async function generateFromDeposits(db: ReturnType<typeof getSupabase>, days: nu
 function generateEmptySnapshots(days: number) {
   console.log('[API] Generating empty snapshots for', days, 'days');
 
+  // Get the primary vault (WBTC on Sepolia)
+  const primaryVault = VAULTS.find(v => v.isPrimary) ?? VAULTS[0];
+  const tokenSymbol = primaryVault?.reserveToken ?? 'WBTC';
+
   const snapshots = [];
   for (let i = days; i >= 0; i--) {
     const date = new Date();
@@ -186,12 +205,12 @@ function generateEmptySnapshots(days: number) {
     snapshots.push({
       timestamp: date,
       holdings: [{
-        asset: 'ETH',
-        strategy: 'aiETH-vault',
+        asset: tokenSymbol,
+        strategy: `ai${tokenSymbol}-vault`,
         amount: 0,
         valueUSD: 0,
-        vaultAddress: 'default',
-        chain: 'sepolia',
+        vaultAddress: primaryVault?.address ?? 'default',
+        chain: primaryVault?.chain ?? 'sepolia',
       }],
       totalValueUSD: 0,
     });

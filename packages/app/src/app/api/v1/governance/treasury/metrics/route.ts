@@ -7,24 +7,25 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
-import { base } from 'viem/chains';
+import { base, sepolia, baseSepolia } from 'viem/chains';
 import { getSupabase } from '../../../../../../lib/db';
-import {
-  aiETHAbi,
-  type VaultConfig,
-} from '../../../../../../lib/protocol';
+import { aiETHAbi } from '../../../../../../lib/protocol';
+import { VAULTS } from '../../../../../../lib/vaults';
+import { getTokenDecimals } from '@bangui/types';
 
-// Vault configurations - these should come from environment or config
-const VAULTS: VaultConfig[] = [
-  {
-    name: 'AiETH Base',
-    address: process.env.VAULT_ADDRESS_BASE as `0x${string}` || '0x0000000000000000000000000000000000000000',
-    chainId: 8453,
-    reserveToken: '0x4200000000000000000000000000000000000006' as `0x${string}`, // WETH on Base
-    reserveSymbol: 'ETH',
-    reserveDecimals: 18,
-  },
-];
+/** Chain to viem chain mapping */
+const CHAIN_MAP: Record<string, typeof base | typeof sepolia | typeof baseSepolia> = {
+  base: base,
+  sepolia: sepolia,
+  base_sepolia: baseSepolia,
+};
+
+/** Chain to RPC URL env var mapping */
+const RPC_ENV_MAP: Record<string, string> = {
+  base: 'BASE_RPC_URL',
+  sepolia: 'NEXT_PUBLIC_DEFAULT_RPC_URL',
+  base_sepolia: 'BASE_SEPOLIA_RPC_URL',
+};
 
 export async function GET() {
   console.log('[API] GET /api/v1/governance/treasury/metrics');
@@ -80,52 +81,67 @@ export async function GET() {
       }
     });
 
-    // Try to fetch onchain data if vault is configured
+    // Try to fetch onchain data from configured vaults
     let totalValueOnchain = 0n;
     let yieldEarned = 0n;
     let reservePrice = 0n;
+    let activeVaultCount = 0;
+    const activeAssets = new Set<string>();
 
-    const vaultAddress = VAULTS[0]?.address;
-    if (vaultAddress && vaultAddress !== '0x0000000000000000000000000000000000000000') {
-      try {
-        const client = createPublicClient({
-          chain: base,
-          transport: http(process.env.BASE_RPC_URL || 'https://mainnet.base.org'),
-        });
+    // Get the primary vault for metrics
+    const primaryVault = VAULTS.find(v => v.isPrimary && v.address !== '0x0000000000000000000000000000000000000000');
 
-        const [underlying, yield_, price] = await Promise.all([
-          client.readContract({
-            address: vaultAddress,
-            abi: aiETHAbi,
-            functionName: 'underlying',
-          }),
-          client.readContract({
-            address: vaultAddress,
-            abi: aiETHAbi,
-            functionName: 'getYieldEarned',
-          }),
-          client.readContract({
-            address: vaultAddress,
-            abi: aiETHAbi,
-            functionName: 'reserveAssetPrice',
-          }),
-        ]);
+    if (primaryVault) {
+      const viemChain = CHAIN_MAP[primaryVault.chain];
+      const rpcEnvVar = RPC_ENV_MAP[primaryVault.chain];
+      const rpcUrl = process.env[rpcEnvVar] || process.env.NEXT_PUBLIC_DEFAULT_RPC_URL;
 
-        totalValueOnchain = underlying as bigint;
-        yieldEarned = yield_ as bigint;
-        reservePrice = price as bigint;
-      } catch (err) {
-        console.error('Failed to fetch onchain vault data:', err);
+      if (viemChain && rpcUrl) {
+        try {
+          const client = createPublicClient({
+            chain: viemChain,
+            transport: http(rpcUrl),
+          });
+
+          const [underlying, yield_, price] = await Promise.all([
+            client.readContract({
+              address: primaryVault.address,
+              abi: aiETHAbi,
+              functionName: 'underlying',
+            }).catch(() => 0n),
+            client.readContract({
+              address: primaryVault.address,
+              abi: aiETHAbi,
+              functionName: 'getYieldEarned',
+            }).catch(() => 0n),
+            client.readContract({
+              address: primaryVault.address,
+              abi: aiETHAbi,
+              functionName: 'reserveAssetPrice',
+            }).catch(() => 0n),
+          ]);
+
+          totalValueOnchain = underlying as bigint;
+          yieldEarned = yield_ as bigint;
+          reservePrice = price as bigint;
+          activeVaultCount = 1;
+          activeAssets.add(primaryVault.reserveToken);
+        } catch (err) {
+          console.error('Failed to fetch onchain vault data:', err);
+        }
       }
     }
 
-    // Calculate USD values
+    // Calculate USD values using correct decimals for the token
+    const tokenDecimals = primaryVault ? getTokenDecimals(primaryVault.reserveToken) : 18;
+    const divisor = BigInt(10 ** tokenDecimals);
+
     const totalValueUsd = totalValueOnchain > 0n && reservePrice > 0n
-      ? Number(totalValueOnchain * reservePrice / 10n ** 18n) / 1e8
+      ? Number(totalValueOnchain * reservePrice / divisor) / 1e8
       : totalDbDeposits;
 
     const yieldEarnedUsd = yieldEarned > 0n && reservePrice > 0n
-      ? Number(yieldEarned * reservePrice / 10n ** 18n) / 1e8
+      ? Number(yieldEarned * reservePrice / divisor) / 1e8
       : 0;
 
     // Calculate APY (simplified - would need historical data for accurate calculation)
@@ -146,8 +162,8 @@ export async function GET() {
         inceptionDate: new Date('2024-01-15').toISOString(),
       },
       activeStrategies: {
-        count: uniqueCauseIds.size || 1,
-        uniqueAssets: 1, // Currently only supporting ETH
+        count: activeVaultCount || (uniqueCauseIds.size || 1),
+        uniqueAssets: activeAssets.size || 1,
       },
     };
 

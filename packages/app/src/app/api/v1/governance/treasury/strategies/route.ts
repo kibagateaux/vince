@@ -11,7 +11,7 @@ import { base, sepolia, baseSepolia } from 'viem/chains';
 import { getSupabase } from '../../../../../../lib/db';
 import { VAULTS, type VaultMetadata } from '../../../../../../lib/vaults';
 import { aiETHAbi, erc20Abi, truncateAddress } from '../../../../../../lib/protocol';
-import type { Address, Chain } from '@bangui/types';
+import { getTokenDecimals, type Address, type Chain } from '@bangui/types';
 
 /** Chain to viem chain mapping */
 const CHAIN_MAP: Record<string, typeof base | typeof sepolia | typeof baseSepolia> = {
@@ -277,12 +277,17 @@ export async function GET() {
         if (yieldEarned > 0n && reservePrice > 0n) {
           yieldEarnedUsd = Number(yieldEarned * reservePrice / 10n ** 18n) / 1e8;
         }
-        // Total deposited in native units (for display)
-        totalDeposited = Number(totalAssets) / 1e18;
+        // Total deposited in native units (for display) - use correct decimals
+        const reserveDecimals = getTokenDecimals(vault.reserveToken);
+        totalDeposited = Number(totalAssets) / Math.pow(10, reserveDecimals);
       }
 
       // Calculate APY estimate
       const currentAPY = totalValueUsd > 0 ? (yieldEarnedUsd / totalValueUsd) * 365 * 100 : 0;
+
+      // Use correct fallback price based on token
+      const fallbackPrice = vault.reserveToken === 'WBTC' ? 100000 : vault.reserveToken === 'ETH' ? 3000 : 1;
+      const reserveDecimals = getTokenDecimals(vault.reserveToken);
 
       strategies.push({
         id: vault.id,
@@ -306,7 +311,7 @@ export async function GET() {
             : undefined,
         },
         vaultToken: {
-          symbol: tokenInfo?.vaultSymbol ?? 'aiETH',
+          symbol: tokenInfo?.vaultSymbol ?? `ai${vault.reserveToken}`,
           address: truncateAddress(vault.address),
         },
         debtToken: tokenInfo?.debtTokenAddress ? {
@@ -318,21 +323,25 @@ export async function GET() {
           address: tokenInfo.debtAssetAddress ? truncateAddress(tokenInfo.debtAssetAddress) : undefined,
         } : undefined,
         totalDeposited: totalDeposited || vaultDeposits,
-        totalDepositedUsd: totalValueUsd || vaultDeposits * 3000, // Fallback price estimate
-        totalDebt: tokenInfo ? Number(BigInt(tokenInfo.totalDebt)) / 1e18 : 0,
+        totalDepositedUsd: totalValueUsd || vaultDeposits * fallbackPrice,
+        totalDebt: tokenInfo ? Number(BigInt(tokenInfo.totalDebt)) / Math.pow(10, reserveDecimals) : 0,
         totalDebtUsd: totalDebtUsd,
         vaultAddress: vault.address,
         chain: vault.chain,
       });
     }
 
-    // If no vaults have addresses configured, return a placeholder
+    // If no vaults have addresses configured, return a placeholder using the primary vault config
     if (strategies.length === 0) {
+      const primaryVault = VAULTS.find(v => v.isPrimary) ?? VAULTS[0];
+      const tokenSymbol = primaryVault?.reserveToken ?? 'WBTC';
+      const fallbackPrice = tokenSymbol === 'WBTC' ? 100000 : tokenSymbol === 'ETH' ? 3000 : 1;
+
       strategies.push({
         id: 'placeholder',
-        name: 'AiETH Vault',
+        name: `ai${tokenSymbol} Vault`,
         protocol: 'Bangui DAF',
-        asset: 'ETH' as const,
+        asset: tokenSymbol as 'ETH' | 'USDC' | 'DAI' | 'WBTC' | 'USDT',
         allocation: {
           amount: totalAllDeposits,
           percentage: 100,
@@ -344,19 +353,19 @@ export async function GET() {
           trend: 'stable' as const,
         },
         reserveToken: {
-          symbol: 'ETH',
+          symbol: tokenSymbol,
         },
         vaultToken: {
-          symbol: 'aiETH',
+          symbol: `ai${tokenSymbol}`,
         },
         debtAsset: {
           symbol: 'GHO',
         },
         totalDeposited: totalAllDeposits,
-        totalDepositedUsd: totalAllDeposits * 3000,
+        totalDepositedUsd: totalAllDeposits * fallbackPrice,
         totalDebt: 0,
         totalDebtUsd: 0,
-        chain: 'sepolia',
+        chain: primaryVault?.chain ?? 'sepolia',
       });
     }
 
